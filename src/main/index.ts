@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import { join } from 'path';
 import { ConfigService } from './services/ConfigService';
 import { NotionService } from './services/NotionService';
@@ -11,13 +11,16 @@ const isDev = process.env.NODE_ENV === 'development';
 
 // 获取图标路径（兼容开发和生产环境）
 function getIconPath(): string {
+  let iconPath: string;
   if (isDev) {
     // 开发环境：从项目根目录的 assets 文件夹
-    return join(process.cwd(), 'assets', 'icon.png');
+    iconPath = join(process.cwd(), 'assets', 'icon.ico');
   } else {
     // 生产环境：从打包后的 resources 目录
-    return join(process.resourcesPath, 'icon.png');
+    iconPath = join(process.resourcesPath, 'icon.ico');
   }
+  console.log('图标路径:', iconPath);
+  return iconPath;
 }
 
 // 全局变量
@@ -75,18 +78,24 @@ app.on('render-process-gone', (event, details) => {
 // 创建窗口
 async function createWindow() {
   try {
+    const iconPath = getIconPath();
     // 创建窗口
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
       title: 'NotionSyncWechat',
-      icon: getIconPath(),
+      icon: iconPath,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         preload: join(__dirname, '../preload/index.js')
-      },
+      }
     });
+    
+    // Windows 特定设置：为任务栏设置图标
+    if (process.platform === 'win32' && mainWindow) {
+      mainWindow.setIcon(iconPath);
+    }
     
     // 加载页面
     if (isDev) {
@@ -111,6 +120,11 @@ async function createWindow() {
 
 // 应用准备就绪时初始化服务和创建窗口
 app.whenReady().then(async () => {
+  // ⚠️ 关键：Windows 任务栏图标和名称设置（必须在这里设置）
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.notionsyncwechat.NotionSyncWechat');
+  }
+  
   console.log('应用准备就绪，初始化服务...');
   await initServices();
   

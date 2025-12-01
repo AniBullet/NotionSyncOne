@@ -73,10 +73,6 @@ export function setupIpcHandlers(
           appSecret: config.wechat.appSecret,
           author: config.wechat.author,
           topNotice: config.wechat.topNotice
-        },
-        sync: config.sync || {
-          autoSync: false,
-          syncInterval: 30
         }
       };
       

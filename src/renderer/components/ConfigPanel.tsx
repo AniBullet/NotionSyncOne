@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { NotionConfig } from '../../shared/types/notion';
 import { WeChatConfig } from '../../shared/types/wechat';
-import { SyncConfig } from '../../shared/types/sync';
 import { Config } from '../../shared/types/config';
 
 interface ConfigPanelProps {
@@ -13,7 +12,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
   const [config, setConfig] = useState<Config>({
     notion: { apiKey: '', databaseId: '' },
     wechat: { appId: '', appSecret: '' },
-    sync: { autoSync: false, syncInterval: 30 },
   });
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
@@ -37,10 +35,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
           appSecret: loadedConfig.wechat?.appSecret || '',
           author: loadedConfig.wechat?.author || '',
           topNotice: loadedConfig.wechat?.topNotice || ''
-        },
-        sync: {
-          autoSync: loadedConfig.sync?.autoSync || false,
-          syncInterval: loadedConfig.sync?.syncInterval || 30
         }
       });
     } catch (err) {
@@ -77,10 +71,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
           appSecret: (config.wechat?.appSecret || '').trim(),
           author: (config.wechat?.author || '').trim() || undefined,
           topNotice: (config.wechat?.topNotice || '').trim() || undefined
-        },
-        sync: {
-          autoSync: Boolean(config.sync?.autoSync),
-          syncInterval: Number(config.sync?.syncInterval) || 30
         }
       };
       
@@ -240,60 +230,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
         </div>
       </div>
 
-      {/* 同步设置卡片 */}
-      <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-        <h2 style={{ 
-          fontSize: '18px', 
-          fontWeight: '600', 
-          marginBottom: 'var(--spacing-md)',
-          color: 'var(--text-primary)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--spacing-sm)'
-        }}>
-          <span style={{ fontSize: '20px' }}>⚙️</span>
-          同步设置
-        </h2>
-        <div style={{ marginBottom: 'var(--spacing-md)' }}>
-          <label style={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: 'var(--spacing-sm)',
-            borderRadius: 'var(--radius-md)',
-            transition: 'background-color var(--transition-base)'
-          }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <input
-              type="checkbox"
-              checked={config.sync.autoSync}
-              onChange={e => handleChange('sync', 'autoSync', e.target.checked)}
-              style={{ 
-                marginRight: 'var(--spacing-sm)',
-                width: '18px',
-                height: '18px',
-                cursor: 'pointer',
-                accentColor: 'var(--primary-green)'
-              }}
-            />
-            <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>启用自动同步</span>
-          </label>
-        </div>
-        <div>
-          <label className="label">同步间隔（分钟）</label>
-          <input
-            type="number"
-            min="1"
-            value={config.sync.syncInterval}
-            onChange={e => handleChange('sync', 'syncInterval', parseInt(e.target.value))}
-            className="input"
-            placeholder="30"
-            style={{ width: '150px' }}
-          />
-        </div>
-      </div>
 
       {/* 保存按钮 */}
       <div style={{ textAlign: 'right' }}>

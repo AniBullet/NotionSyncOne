@@ -1,4 +1,10 @@
 @echo off
+REM 切换到脚本所在目录（修复管理员运行时的路径问题）
+cd /d "%~dp0"
+
+REM 检测管理员权限（静默检测，不自动提升）
+REM 如需管理员权限，请手动右键"以管理员身份运行"
+
 chcp 65001 >nul
 title NotionSyncWechat Dev Server
 

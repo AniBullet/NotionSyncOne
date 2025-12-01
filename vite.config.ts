@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import vue from '@vitejs/plugin-vue';
 import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 
@@ -12,7 +11,6 @@ export default defineConfig(({ mode }) => {
   
   return {
   plugins: [
-    vue(),
     electron([
       {
           // Main process - 支持热重载
@@ -65,7 +63,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: isProduction ? {
-            'vendor': ['vue', 'react', 'react-dom']
+            'vendor': ['react', 'react-dom']
           } : undefined
         }
       }
@@ -94,7 +92,6 @@ export default defineConfig(({ mode }) => {
   },
   base: './',
   optimizeDeps: {
-    include: ['vue'],
     exclude: ['electron']
   },
   css: {

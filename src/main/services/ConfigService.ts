@@ -4,7 +4,6 @@ import { join, dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { NotionConfig } from '../../shared/types/notion';
 import { WeChatConfig } from '../../shared/types/wechat';
-import { SyncConfig } from '../../shared/types/sync';
 import { Config } from '../../shared/types/config';
 
 export class ConfigService {
@@ -22,8 +21,7 @@ export class ConfigService {
     this.configPath = join(configDir, 'config.json');
     this.config = {
       notion: { apiKey: '', databaseId: '' },
-      wechat: { appId: '', appSecret: '' },
-      sync: { autoSync: false, syncInterval: 30 }
+      wechat: { appId: '', appSecret: '' }
     };
 
     // 初始化配置
@@ -72,11 +70,7 @@ export class ConfigService {
           // 保留已有的 token 信息
           accessToken: loadedConfig.wechat?.accessToken,
           tokenExpiresAt: loadedConfig.wechat?.tokenExpiresAt,
-        },
-        sync: {
-          autoSync: loadedConfig.sync?.autoSync || false,
-          syncInterval: loadedConfig.sync?.syncInterval || 30,
-        },
+        }
       };
       return this.config;
     } catch (error) {
@@ -104,8 +98,7 @@ export class ConfigService {
           // 确保保留 token 信息
           accessToken: this.config.wechat?.accessToken || newConfig.wechat?.accessToken,
           tokenExpiresAt: this.config.wechat?.tokenExpiresAt || newConfig.wechat?.tokenExpiresAt,
-        },
-        sync: newConfig.sync,
+        }
       };
       
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
@@ -197,11 +190,6 @@ export class ConfigService {
     }
     if (!config.wechat.appSecret) {
       errors.push('微信 AppSecret 不能为空');
-    }
-
-    // 验证同步配置
-    if (config.sync.syncInterval < 1) {
-      errors.push('同步间隔不能小于 1 分钟');
     }
 
     if (errors.length > 0) {

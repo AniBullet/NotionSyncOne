@@ -1,4 +1,4 @@
-# NotionSyncWechat 环境初始化脚本 (Windows)
+﻿# NotionSyncWechat 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
 Write-Host "======================================"
@@ -69,6 +69,17 @@ if ($LASTEXITCODE -ne 0) {
 # 手动安装 Electron（因为 pnpm 可能会忽略构建脚本）
 Write-Host ""
 Write-Host "[6/6] 配置 Electron..."
+Write-Host "      使用国内镜像加速 Electron 下载..." -ForegroundColor Yellow
+
+# 为 Electron 设置国内镜像（如有需要可自行修改为其他镜像）
+# 常见镜像：
+#   - https://npmmirror.com/mirrors/electron/
+#   - https://registry.npmmirror.com/-/binary/electron/
+if (-not $env:ELECTRON_MIRROR) {
+    $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+}
+Write-Host "      ELECTRON_MIRROR = $($env:ELECTRON_MIRROR)" -ForegroundColor DarkGray
+
 if (Test-Path "node_modules\electron\install.js") {
     node node_modules\electron\install.js
     Write-Host "      Electron 配置成功" -ForegroundColor Green

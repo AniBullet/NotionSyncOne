@@ -1,0 +1,42 @@
+@import './styles/theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 微信公众号预览样式 */
+.wechat-preview {
+  word-wrap: break-word;
+  word-break: break-all;
+}
+
+.wechat-preview img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+.wechat-preview p {
+  margin: 1em 0;
+  line-height: 1.8;
+}
+
+.wechat-preview h1,
+.wechat-preview h2,
+.wechat-preview h3 {
+  margin: 1.5em 0 1em 0;
+  font-weight: bold;
+}
+
+.wechat-preview h1 {
+  font-size: 1.8em;
+}
+
+.wechat-preview h2 {
+  font-size: 1.5em;
+}
+
+.wechat-preview h3 {
+  font-size: 1.2em;
+} 

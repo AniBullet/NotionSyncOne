@@ -201,38 +201,39 @@ const ArticlePanel: React.FC = () => {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* 批量同步按钮 */}
-          {selectedArticles.length > 0 && (
-            <button
-              onClick={handleBatchSync}
-              style={{
-                padding: '6px 16px',
-                borderRadius: 'var(--radius-md)',
-                border: 'none',
-                backgroundColor: 'var(--primary-green)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all var(--transition-base)',
-                fontWeight: '600',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-              onMouseEnter={e => {
+          {/* 批量同步按钮（始终可见，根据选择数量调整状态） */}
+          <button
+            onClick={handleBatchSync}
+            style={{
+              padding: '6px 16px',
+              borderRadius: 'var(--radius-md)',
+              border: 'none',
+              backgroundColor: selectedArticles.length > 0 ? 'var(--primary-green)' : 'var(--bg-tertiary)',
+              color: selectedArticles.length > 0 ? '#FFFFFF' : 'var(--text-tertiary)',
+              fontSize: '13px',
+              cursor: selectedArticles.length > 0 ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all var(--transition-base)',
+              fontWeight: '600',
+              boxShadow: selectedArticles.length > 0 ? 'var(--shadow-sm)' : 'none',
+              opacity: selectedArticles.length > 0 ? 1 : 0.85
+            }}
+            onMouseEnter={e => {
+              if (selectedArticles.length > 0) {
                 e.currentTarget.style.transform = 'translateY(-1px)';
                 e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-              }}
-            >
-              <span>🚀</span>
-              批量同步 ({selectedArticles.length})
-            </button>
-          )}
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = selectedArticles.length > 0 ? 'var(--shadow-sm)' : 'none';
+            }}
+          >
+            <span>🚀</span>
+            {selectedArticles.length > 0 ? `同步选中 (${selectedArticles.length})` : '同步选中'}
+          </button>
 
           {/* 刷新按钮 */}
           <button

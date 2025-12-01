@@ -62,6 +62,12 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 'var(--spacing-lg)', padding: 'var(--spacing-lg)' }}>
       {articles.map((article) => {
+        // 解析 Notion 页面封面图片（优先 external，其次 file）
+        const coverUrl =
+          article.cover?.type === 'external'
+            ? article.cover.external?.url
+            : article.cover?.file?.url;
+
         const syncState = syncStates[article.id];
         const isSyncing = syncState?.status === SyncStatus.SYNCING;
         const isSelected = selectedArticles.includes(article.id);
@@ -115,47 +121,6 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
               </div>
             )}
 
-            {/* 右上角同步按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSync(article.id);
-              }}
-              disabled={isSyncing}
-              title={isSyncing ? '同步中...' : '同步到微信'}
-              style={{
-                position: 'absolute',
-                top: 'var(--spacing-md)',
-                right: 'var(--spacing-md)',
-                width: '36px',
-                height: '36px',
-                borderRadius: 'var(--radius-full)',
-                border: 'none',
-                background: isSyncing ? 'var(--bg-tertiary)' : 'linear-gradient(135deg, var(--primary-green) 0%, var(--primary-green-dark) 100%)',
-                color: '#FFFFFF',
-                fontSize: '18px',
-                cursor: isSyncing ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all var(--transition-base)',
-                boxShadow: isSyncing ? 'none' : 'var(--shadow-md)',
-                opacity: isSyncing ? 0.6 : 1
-              }}
-              onMouseEnter={e => {
-                if (!isSyncing) {
-                  e.currentTarget.style.transform = 'scale(1.1) rotate(10deg)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-                }
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
-                e.currentTarget.style.boxShadow = isSyncing ? 'none' : 'var(--shadow-md)';
-              }}
-            >
-              {isSyncing ? '⏳' : '🚀'}
-            </button>
-
             {/* 同步状态徽章 - 移到右上角火箭按钮下方 */}
             {syncState && (
               <div 
@@ -165,10 +130,63 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
                   top: '60px',
                   right: 'var(--spacing-md)',
                   fontSize: '10px',
-                  padding: '3px 6px'
+                  padding: '3px 6px',
+                  zIndex: 15
                 }}
               >
                 {syncState.status === SyncStatus.SUCCESS ? '✓' : syncState.status === SyncStatus.FAILED ? '✗' : '◷'}
+              </div>
+            )}
+
+            {/* 封面图（如果有） */}
+            {coverUrl && (
+              <div
+                style={{
+                  margin: 'var(--spacing-lg) var(--spacing-md) var(--spacing-md)',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  background: 'var(--bg-tertiary)',
+                  height: '160px',
+                  zIndex: 1
+                }}
+              >
+                <img
+                  src={coverUrl}
+                  alt={article.title}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                    transform: 'scale(1.02)',
+                    transition: 'transform var(--transition-base), filter var(--transition-base)',
+                    filter: 'brightness(0.96)'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'scale(1.06)';
+                    e.currentTarget.style.filter = 'brightness(1)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.filter = 'brightness(0.96)';
+                  }}
+                  onError={e => {
+                    // 图片加载失败时隐藏整个封面区域，避免显示破图图标
+                    const parent = e.currentTarget.parentElement as HTMLElement | null;
+                    if (parent) {
+                      parent.style.display = 'none';
+                    }
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.28), rgba(0,0,0,0.05))',
+                    pointerEvents: 'none'
+                  }}
+                />
               </div>
             )}
 

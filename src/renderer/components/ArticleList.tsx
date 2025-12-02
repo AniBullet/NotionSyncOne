@@ -138,6 +138,48 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
               </div>
             )}
 
+            {/* 顶部右上角操作按钮：仅在同步中时展示“取消” */}
+            {isSyncing && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'var(--spacing-md)',
+                  right: 'var(--spacing-md)',
+                  zIndex: 20,
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  title="取消本次同步"
+                  style={{
+                    padding: '2px 10px',
+                    borderRadius: '999px',
+                    border: '1px solid rgba(239,68,68,0.4)',
+                    backgroundColor: 'rgba(239,68,68,0.12)',
+                    color: '#FCA5A5',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.18)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.12)';
+                  }}
+                  onClick={async () => {
+                    try {
+                      await window.electron.cancelSync(article.id);
+                    } catch (err) {
+                      console.error('取消同步失败:', err);
+                    }
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            )}
+
             {/* 封面图（如果有） */}
             {coverUrl && (
               <div
@@ -227,6 +269,40 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
                   <>
                     <span style={{ margin: '0 4px' }}>•</span>
                     <span>✍️ {article.author}</span>
+                  </>
+                )}
+                {/* 不显眼的“打开 Notion 页面”入口 */}
+                {article.url && (
+                  <>
+                    <span style={{ margin: '0 4px' }}>•</span>
+                    <button
+                      type="button"
+                      title="点击在应用内打开；按住 Ctrl 点击用系统浏览器打开"
+                      style={{
+                        padding: 0,
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '11px',
+                        color: 'var(--text-tertiary)',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textUnderlineOffset: '2px',
+                      }}
+                      onClick={async e => {
+                        e.stopPropagation();
+                        try {
+                          if (e.ctrlKey || e.metaKey) {
+                            await window.electron.openExternal(article.url!);
+                          } else {
+                            await window.electron.openNotionPage(article.url!);
+                          }
+                        } catch (err) {
+                          console.error('打开 Notion 页面失败:', err);
+                        }
+                      }}
+                    >
+                      打开 Notion
+                    </button>
                   </>
                 )}
               </div>

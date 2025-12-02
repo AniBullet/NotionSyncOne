@@ -74,6 +74,13 @@ export class IpcService {
   }
 
   /**
+   * 取消指定文章的同步
+   */
+  static async cancelSync(articleId: string): Promise<boolean> {
+    return window.electron.cancelSync(articleId);
+  }
+
+  /**
    * 同步文章
    */
   static async syncArticle(articleId: string, publishMode: 'publish' | 'draft' = 'draft'): Promise<SyncState> {

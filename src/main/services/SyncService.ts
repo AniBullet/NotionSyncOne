@@ -32,6 +32,36 @@ export class SyncService {
     this.loadSyncStates();
   }
 
+  /**
+   * 按微信接口要求限制标题长度（按 UTF-8 字节数截断）
+   * 说明：微信图文标题限制大约 64 字节，这里使用 64 作为安全上限
+   */
+  private cutWeChatTitle(rawTitle: string, maxBytes: number = 64): string {
+    if (!rawTitle) return '';
+
+    let bytes = 0;
+    let result = '';
+
+    for (const ch of rawTitle) {
+      const len = Buffer.byteLength(ch, 'utf8');
+      if (bytes + len > maxBytes) {
+        break;
+      }
+      bytes += len;
+      result += ch;
+    }
+
+    // 如果被截断，可以在日志里记录一下方便排查
+    if (result.length < rawTitle.length) {
+      LogService.warn(
+        `标题长度超出微信限制，已自动截断。原始长度: ${rawTitle.length} 字符，截断后: ${result.length} 字符`,
+        'SyncService'
+      );
+    }
+
+    return result;
+  }
+
   // 转义 HTML 特殊字符
   private escapeHtml(text: string): string {
     return text
@@ -217,8 +247,8 @@ export class SyncService {
     const abortController = new AbortController();
     this.activeSyncControllers.set(articleId, abortController);
 
-    // 添加超时机制（5分钟）
-    const timeout = 5 * 60 * 1000; // 5分钟
+    // 添加超时机制（默认 5 分钟，这里放宽到 15 分钟，适配图片较多的文章）
+    const timeout = 15 * 60 * 1000; // 15 分钟
     const timeoutPromise = new Promise<SyncState>((_, reject) => {
       setTimeout(() => {
         abortController.abort(); // 超时时也触发取消
@@ -590,8 +620,10 @@ export class SyncService {
     // 获取配置中的作者，如果配置中没有则从文章属性获取
     const author = wechatConfig.author || authorProperty?.rich_text?.[0]?.plain_text || '';
 
+    const safeTitle = this.cutWeChatTitle(page.title);
+
     return {
-      title: page.title,
+      title: safeTitle,
       content,
       author: author,
       digest: digest,

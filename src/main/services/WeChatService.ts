@@ -16,6 +16,35 @@ export class WeChatService {
     this.configService = configService;
   }
 
+  /**
+   * 按微信接口要求限制标题/摘要长度（按 UTF-8 字节数截断）
+   * 说明：微信标题/摘要限制大约 64 字节，这里使用 64 作为安全上限
+   */
+  private cutTextForWeChat(raw: string, maxBytes: number = 64, fieldName: string = 'title'): string {
+    if (!raw) return '';
+
+    let bytes = 0;
+    let result = '';
+
+    for (const ch of raw) {
+      const len = Buffer.byteLength(ch, 'utf8');
+      if (bytes + len > maxBytes) {
+        break;
+      }
+      bytes += len;
+      result += ch;
+    }
+
+    if (result.length < raw.length) {
+      LogService.warn(
+        `字段 "${fieldName}" 长度超出微信限制，已自动截断。原始长度: ${raw.length} 字符，截断后: ${result.length} 字符`,
+        'WeChatService'
+      );
+    }
+
+    return result;
+  }
+
   async publishArticle(article: WeChatArticle, publishMode: 'publish' | 'draft' = 'publish', abortSignal?: AbortSignal): Promise<void> {
     try {
       LogService.log('========== WeChatService: 开始发布文章 ==========', 'WeChatService');
@@ -127,11 +156,14 @@ export class WeChatService {
         LogService.log(`新URL: ${uploadedImageUrl.substring(0, 60)}...`, 'WeChatService');
       }
       
-      // 构建文章数据对象
+      // 构建文章数据对象（对标题和摘要做一次微信长度安全截断）
+      const safeTitle = this.cutTextForWeChat(article.title, 128, 'title');
+      const safeDigest = this.cutTextForWeChat(article.digest || article.title, 128, 'digest');
+
       const articleItem: any = {
-        title: article.title,
+        title: safeTitle,
         author: article.author || '匿名',
-        digest: article.digest || article.title,
+        digest: safeDigest,
         content: processedContent,
         content_source_url: article.contentSourceUrl || '', // 原文链接
         need_open_comment: article.needOpenComment ? 1 : 0,

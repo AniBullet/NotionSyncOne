@@ -15,6 +15,8 @@ declare global {
       getSyncStatus(articleId: string): Promise<any>;
       cancelSync(articleId: string): Promise<boolean>;
       onSyncStateChanged(callback: (state: any) => void): () => void;
+      openNotionPage(url: string): Promise<void>;
+      openExternal(url: string): Promise<void>;
       showNotification(title: string, body: string): Promise<void>;
     }
   }

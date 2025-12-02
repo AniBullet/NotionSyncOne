@@ -16,6 +16,8 @@ interface IElectronAPI {
   previewArticle: (pageId: string) => Promise<any>;
   getSyncStatus: (articleId: string) => Promise<SyncState>;
   cancelSync: (articleId: string) => Promise<boolean>;
+  openNotionPage: (url: string) => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
   showNotification: (title: string, body: string) => Promise<void>;
   onSyncStateChanged: (callback: (state: SyncState) => void) => void;
 }
@@ -39,6 +41,8 @@ contextBridge.exposeInMainWorld('electron', {
   
   // Notion 相关
   getNotionPages: () => ipcRenderer.invoke('get-notion-pages'),
+  openNotionPage: (url: string) => ipcRenderer.invoke('open-notion-url', url),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),
   
   // 同步相关
   syncArticle: (pageId, publishMode) => ipcRenderer.invoke('sync-article', pageId, publishMode),

@@ -18,6 +18,8 @@ interface IElectronAPI {
   syncArticle(pageId: string, publishMode?: 'publish' | 'draft'): Promise<void>;
   getSyncStatus(articleId: string): Promise<SyncState>;
   cancelSync(articleId: string): Promise<boolean>;
+  openNotionPage(url: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
   onSyncStateChanged(callback: (state: SyncState) => void): void;
 }
 

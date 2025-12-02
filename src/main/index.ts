@@ -59,16 +59,8 @@ async function initServices() {
   }
 }
 
-// 处理 GPU 进程崩溃
-app.on('gpu-process-crashed', (event, killed) => {
-  console.log('GPU 进程崩溃，正在重启...');
-  if (mainWindow) {
-    mainWindow.reload();
-  }
-});
-
-// 处理网络服务崩溃
-app.on('render-process-gone', (event, details) => {
+// 处理渲染进程异常崩溃，尝试自动刷新主窗口
+app.on('render-process-gone', (_event, details) => {
   console.log('渲染进程崩溃:', details);
   if (mainWindow) {
     mainWindow.reload();
@@ -117,6 +109,40 @@ async function createWindow() {
     console.error('创建窗口失败:', error);
   }
 }
+
+// 在内置浏览器窗口中打开 Notion 页面
+ipcMain.handle('open-notion-url', async (_event, url: string) => {
+  try {
+    if (!url) return;
+
+    const iconPath = getIconPath();
+    const notionWindow = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      title: 'Notion 预览',
+      icon: iconPath,
+      parent: mainWindow ?? undefined,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      }
+    });
+
+    await notionWindow.loadURL(url);
+  } catch (error) {
+    console.error('打开 Notion 页面失败:', error);
+  }
+});
+
+// 在系统默认浏览器中打开 URL
+ipcMain.handle('open-external-url', async (_event, url: string) => {
+  try {
+    if (!url) return;
+    await shell.openExternal(url);
+  } catch (error) {
+    console.error('在系统浏览器中打开链接失败:', error);
+  }
+});
 
 // 应用准备就绪时初始化服务和创建窗口
 app.whenReady().then(async () => {

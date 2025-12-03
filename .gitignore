@@ -29,7 +29,7 @@ config.json
 *.pem
 *.p12
 
-# 日志
+# 日志（安全重要！）
 logs/
 *.log
 npm-debug.log*
@@ -37,6 +37,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+debug.log
+error.log
 
 # 系统文件
 Thumbs.db 
@@ -64,3 +66,18 @@ coverage/
 *.rpm
 *.zip
 *.tar.gz
+
+# 用户数据（安全重要！）
+userData/
+user-data/
+%APPDATA%/
+
+# 备份文件
+*.bak
+*.backup
+*~
+
+# 数据库文件（如果有）
+*.db
+*.sqlite
+*.sqlite3

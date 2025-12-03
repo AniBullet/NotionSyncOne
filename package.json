@@ -14,10 +14,12 @@
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development vite",
-    "build": "vite build && electron-builder",
+    "build": "cross-env NODE_ENV=production vite build && electron-builder",
+    "build:dev": "cross-env NODE_ENV=development vite build && electron-builder",
     "preview": "vite preview",
     "test": "jest",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directs --max-warnings 0",
+    "audit": "npm audit",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {

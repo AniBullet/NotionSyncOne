@@ -1,6 +1,7 @@
 import { Client } from '@notionhq/client';
 import { NotionConfig, NotionPage, NotionBlock } from '../../shared/types/notion';
 import { PageObjectResponse, BlockObjectResponse } from '@notionhq/client/build/src/api-endpoints';
+import { logger } from '../utils/logger';
 
 export class NotionService {
   private client: Client | null = null;
@@ -14,15 +15,15 @@ export class NotionService {
   private initClient() {
     try {
       if (!this.config.apiKey) {
-        console.error('Notion API Key 未配置');
+        logger.error('Notion API Key 未配置');
         return;
       }
       this.client = new Client({
         auth: this.config.apiKey
       });
-      console.log('Notion 客户端初始化成功');
+      logger.log('Notion 客户端初始化成功');
     } catch (error) {
-      console.error('Notion 客户端初始化失败:', error);
+      logger.error('Notion 客户端初始化失败:', error);
       this.client = null;
     }
   }
@@ -66,7 +67,7 @@ export class NotionService {
           startCursor = response.next_cursor || undefined;
         }
 
-        console.log(`已获取 ${allResults.length} 篇文章`);
+        logger.log(`已获取 ${allResults.length} 篇文章`);
 
         const articles = allResults.map((page: PageObjectResponse) => {
           // 查找标题属性
@@ -140,7 +141,7 @@ export class NotionService {
         if (isNetworkError && retryCount < maxRetries - 1) {
           retryCount++;
           const delay = retryCount * 1000; // 递增延迟：1秒、2秒
-          console.log(`网络错误，${delay}ms 后重试 (${retryCount}/${maxRetries})...`);
+          logger.log(`网络错误，${delay}ms 后重试 (${retryCount}/${maxRetries})...`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue; // 重试
         }

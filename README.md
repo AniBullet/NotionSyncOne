@@ -139,14 +139,21 @@ pnpm dev
 
 ## 📦 打包分发
 
-### 打包安装程序
+### 快速打包
 
 ```bash
-# Windows
-.\build.cmd
+# Windows（推荐）
+_build.cmd          # 生产构建（推荐发布用）
+_build_DEBUG.cmd    # 调试构建（含完整日志，仅调试用）
 
-# 或手动打包
-pnpm build
+# 开发与检查
+_dev.cmd            # 开发服务器（热重载）
+_check_security.cmd # 依赖安全检查
+
+# 或手动
+pnpm build          # 生产构建
+pnpm run build:dev  # 开发构建
+pnpm audit          # 安全检查
 ```
 
 ### 打包产物
@@ -158,6 +165,14 @@ dist\
 ```
 
 **推荐分享便携版**：体积更小，无需安装，双击即用。
+
+### 日志级别说明
+
+| 构建方式 | 日志级别 | 用途 |
+|---------|---------|------|
+| `_build.cmd` | 最小 | ✅ 发布用 |
+| `_build_DEBUG.cmd` | 完整 | 🔍 调试用 |
+| `_dev.cmd` | 完整 | 💻 开发用 |
 
 ## 🛠️ 开发指南
 

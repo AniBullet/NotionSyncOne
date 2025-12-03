@@ -5,6 +5,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { NotionConfig } from '../../shared/types/notion';
 import { WeChatConfig } from '../../shared/types/wechat';
 import { Config } from '../../shared/types/config';
+import { logger } from '../utils/logger';
 
 export class ConfigService {
   private configPath: string;
@@ -26,7 +27,7 @@ export class ConfigService {
 
     // 初始化配置
     this.init().catch(error => {
-      console.error('初始化配置失败:', error);
+      logger.error('初始化配置失败:', error);
     });
   }
 
@@ -34,7 +35,7 @@ export class ConfigService {
     try {
       await this.loadConfig();
     } catch (error) {
-      console.error('加载配置失败，使用默认配置:', error);
+      logger.error('加载配置失败，使用默认配置:', error);
       // 确保配置文件存在
       const configDir = dirname(this.configPath);
       if (!existsSync(configDir)) {
@@ -47,12 +48,11 @@ export class ConfigService {
   private async loadConfig(): Promise<Config> {
     try {
       if (!existsSync(this.configPath)) {
-        console.log('配置文件不存在，创建默认配置');
+        logger.log('配置文件不存在，创建默认配置');
         await this.saveConfig(this.config);
         return this.config;
       }
       
-      // 减少日志输出，避免日志过多
       const data = await fs.readFile(this.configPath, 'utf-8');
       const loadedConfig = JSON.parse(data);
       
@@ -74,7 +74,7 @@ export class ConfigService {
       };
       return this.config;
     } catch (error) {
-      console.error('加载配置失败:', error);
+      logger.error('加载配置失败:', error);
       throw error;
     }
   }
@@ -102,10 +102,8 @@ export class ConfigService {
       };
       
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
-      
-      // 减少日志输出
     } catch (error) {
-      console.error('保存配置失败:', error);
+      logger.error('保存配置失败:', error);
       throw error;
     }
   }
@@ -131,7 +129,7 @@ export class ConfigService {
       // 验证配置是否保存成功
       await this.loadConfig();
     } catch (error) {
-      console.error('保存 Notion 配置失败:', error);
+      logger.error('保存 Notion 配置失败:', error);
       throw error;
     }
   }

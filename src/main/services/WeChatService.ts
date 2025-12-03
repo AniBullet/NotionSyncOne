@@ -7,6 +7,7 @@ import * as path from 'path';
 import { WeChatConfig, WeChatArticle, WeChatResponse } from '../../shared/types/wechat';
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
+import { logger } from '../utils/logger';
 
 export class WeChatService {
   private configService: ConfigService;
@@ -63,18 +64,16 @@ export class WeChatService {
       let imageUrl: string | undefined = article.coverImageUrl;
       
       if (!imageUrl) {
-        LogService.log('未找到封面图片，使用 Unsplash 随机图片...', 'WeChatService');
-        // 使用 Unsplash 的随机图片
-        const unsplashUrl = `https://api.unsplash.com/photos/random?query=technology+minimal&orientation=landscape&client_id=WVH7UopVAW9CxpF3CSNDgbYMJLNO0qwRphkOBEDjtWY`;
-        LogService.log('正在获取 Unsplash 图片...', 'WeChatService');
+        LogService.log('未找到封面图片，使用默认占位图片...', 'WeChatService');
+        // 使用公开的占位图片服务（无需 API Key）
+        // 可选方案：picsum.photos（免费、无需 API Key）
+        const placeholderUrl = `https://picsum.photos/1200/630?random=${Date.now()}`;
+        LogService.log('正在获取占位图片...', 'WeChatService');
         try {
-          const unsplashResponse = await axios.get(unsplashUrl, { timeout: 10000 });
-          imageUrl = unsplashResponse.data.urls.regular;
-          if (imageUrl) {
-            LogService.log(`获取到 Unsplash 图片: ${imageUrl.substring(0, 50)}...`, 'WeChatService');
-          }
+          imageUrl = placeholderUrl;
+          LogService.log(`获取到占位图片: ${imageUrl.substring(0, 50)}...`, 'WeChatService');
         } catch (error) {
-          LogService.warn('获取 Unsplash 图片失败，跳过封面图片', 'WeChatService');
+          LogService.warn('获取占位图片失败，跳过封面图片', 'WeChatService');
           imageUrl = undefined;
         }
       } else {
@@ -251,7 +250,7 @@ export class WeChatService {
 
       // 发布草稿
       await this.publishDraft(draftMediaId);
-      console.log('文章发布流程完成');
+      logger.log('文章发布流程完成');
       return;
     } catch (error) {
       LogService.error('========== WeChatService: 发布文章失败 ==========', 'WeChatService');
@@ -266,36 +265,31 @@ export class WeChatService {
 
   private async getAccessToken(): Promise<string> {
     try {
-      console.log('开始获取访问令牌...');
+      logger.log('开始获取访问令牌...');
       const config = this.configService.getWeChatConfig();
-      // ⚠️ 安全：不记录完整配置，避免泄露密钥
-      console.log('配置状态: appId已配置:', !!config.appId, ', appSecret已配置:', !!config.appSecret);
+      logger.log('配置状态: appId已配置:', !!config.appId, ', appSecret已配置:', !!config.appSecret);
 
       const cachedToken = config.accessToken;
       const tokenExpiresAt = config.tokenExpiresAt || 0;
 
       // 如果令牌未过期，直接返回
       if (cachedToken && tokenExpiresAt > Date.now()) {
-        console.log('使用缓存的访问令牌');
+        logger.log('使用缓存的访问令牌');
         return cachedToken;
       }
 
-      console.log('获取新的访问令牌...');
+      logger.log('获取新的访问令牌...');
       const url = `${this.baseUrl}/token?grant_type=client_credential&appid=${config.appId}&secret=${config.appSecret}`;
-      // ⚠️ 安全：不记录包含密钥的URL
-      console.log('正在请求访问令牌...');
-
+      
       const response = await axios.get<WeChatResponse & { access_token: string; expires_in: number }>(url);
-      // ⚠️ 安全：不记录包含token的响应
-      console.log('访问令牌获取成功，过期时间:', response.data.expires_in, '秒');
+      logger.log('访问令牌获取成功，过期时间:', response.data.expires_in, '秒');
 
       if (response.data.errcode !== 0 && !response.data.access_token) {
-        console.error('获取访问令牌失败:', response.data);
+        logger.error('获取访问令牌失败:', response.data);
         throw new Error(`获取访问令牌失败: ${response.data.errmsg}`);
       }
 
       // 更新配置
-      console.log('更新访问令牌配置...');
       const currentConfig = await this.configService.getConfig();
       await this.configService.saveConfig({
         ...currentConfig,
@@ -306,10 +300,10 @@ export class WeChatService {
         }
       });
 
-      console.log('访问令牌获取成功');
+      logger.log('访问令牌获取成功');
       return response.data.access_token;
     } catch (error) {
-      console.error('获取访问令牌失败:', error);
+      logger.error('获取访问令牌失败:', error);
       throw error;
     }
   }
@@ -580,12 +574,10 @@ export class WeChatService {
 
   async uploadImage(imageUrl: string, abortSignal?: AbortSignal): Promise<{ mediaId: string; url?: string }> {
     try {
-      console.log('开始上传图片:', imageUrl.substring(0, 50) + '...');
+      logger.log('开始上传图片:', imageUrl.substring(0, 50) + '...');
       const accessToken = await this.getAccessToken();
-      // 使用永久素材接口替代临时素材接口
       const url = `${this.baseUrl}/material/add_material?access_token=${accessToken}&type=image`;
-      // ⚠️ 安全：不记录包含token的URL
-      console.log('正在上传图片到微信素材库...');
+      logger.log('正在上传图片到微信素材库...');
 
       // 检查是否已取消
       if (abortSignal?.aborted) {
@@ -594,7 +586,7 @@ export class WeChatService {
 
       // 使用改进的下载方法
       const buffer = await this.downloadImage(imageUrl, abortSignal);
-      console.log('图片下载完成，大小:', buffer.length, '字节');
+      logger.log('图片下载完成，大小:', buffer.length, '字节');
       
       // 再次检查是否已取消
       if (abortSignal?.aborted) {
@@ -614,7 +606,7 @@ export class WeChatService {
       }));
 
       // 上传到微信
-      console.log('正在上传永久图片到微信...');
+      logger.log('正在上传永久图片到微信...');
       const response = await axios.post<WeChatResponse & { media_id: string; url?: string }>(
         url,
         formData,
@@ -627,18 +619,17 @@ export class WeChatService {
 
       // 检查上传结果
       if (response.data.errcode !== 0 && !response.data.media_id) {
-        console.error('上传图片失败，错误码:', response.data.errcode, '错误信息:', response.data.errmsg);
+        logger.error('上传图片失败，错误码:', response.data.errcode, '错误信息:', response.data.errmsg);
         throw new Error(`上传图片失败: ${response.data.errmsg}`);
       }
 
-      console.log('永久图片上传成功，media_id:', response.data.media_id);
+      logger.log('永久图片上传成功，media_id:', response.data.media_id);
       const uploadedUrl = response.data.url;
       if (uploadedUrl) {
-        console.log('图片URL:', uploadedUrl);
+        logger.log('图片URL:', uploadedUrl);
         LogService.log(`图片上传成功，URL: ${uploadedUrl}`, 'WeChatService');
       } else {
         LogService.warn('警告: 图片上传成功但未返回URL字段', 'WeChatService');
-        LogService.warn(`完整响应: ${JSON.stringify(response.data)}`, 'WeChatService');
       }
       // 返回 media_id 和 url
       return {
@@ -646,7 +637,7 @@ export class WeChatService {
         url: uploadedUrl
       };
     } catch (error) {
-      console.error('上传图片失败:', error);
+      logger.error('上传图片失败:', error);
       throw error;
     }
   }
@@ -670,7 +661,7 @@ export class WeChatService {
   // 添加发布草稿的方法
   async publishDraft(mediaId: string): Promise<void> {
     try {
-      console.log('开始发布草稿...');
+      logger.log('开始发布草稿...');
       const accessToken = await this.getAccessToken();
       const publishUrl = `${this.baseUrl}/freepublish/submit?access_token=${accessToken}`;
       
@@ -682,9 +673,9 @@ export class WeChatService {
       LogService.log(`正在提交发布请求...`, 'WeChatService');
       const publishResponse = await axios.post<WeChatResponse>(publishUrl, publishData);
    
-      console.log('发布草稿响应 - 错误码:', publishResponse.data.errcode, ', 消息:', publishResponse.data.errmsg || '成功');
+      logger.log('发布草稿响应 - 错误码:', publishResponse.data.errcode);
       if (publishResponse.data.errcode === 0 && publishResponse.data.publish_id) {
-        console.log('文章提交发布成功，publish_id:', publishResponse.data.publish_id);
+        logger.log('文章提交发布成功，publish_id:', publishResponse.data.publish_id);
         
         // 等待发布完成
         let retryCount = 0;
@@ -693,18 +684,17 @@ export class WeChatService {
 
         while (retryCount < maxRetries) {
           // 检查发布状态
-          console.log('正在检查发布状态...');
+          logger.log('正在检查发布状态...');
           const statusUrl = `${this.baseUrl}/freepublish/get?access_token=${accessToken}`;
           const statusResponse = await axios.post<WeChatResponse>(statusUrl, {
             publish_id: publishResponse.data.publish_id
           });
           
-          console.log('发布状态检查 - 错误码:', statusResponse.data.errcode);
           const publishStatus = statusResponse.data.publish_status;
-          console.log('文章状态:', this.getPublishStatus(publishStatus));
+          logger.log('文章状态:', this.getPublishStatus(publishStatus));
 
           if (publishStatus === 0) {
-            console.log('文章发布成功，可在公众号查看');
+            logger.always('文章发布成功，可在公众号查看');
             return;
           } else if (publishStatus > 1) { // 状态大于1表示发布失败
             throw new Error(`发布失败: ${this.getPublishStatus(publishStatus)}`);
@@ -713,7 +703,7 @@ export class WeChatService {
           // 如果状态是1(待发布)，继续等待
           retryCount++;
           if (retryCount < maxRetries) {
-            console.log(`等待发布完成，第 ${retryCount} 次检查...`);
+            logger.log(`等待发布完成，第 ${retryCount} 次检查...`);
             await new Promise(resolve => setTimeout(resolve, retryInterval));
           }
         }
@@ -723,7 +713,7 @@ export class WeChatService {
         throw new Error(`发布草稿失败: ${publishResponse.data.errmsg || '未知错误'}`);
       }
     } catch (error) {
-      console.error('发布草稿失败:', error);
+      logger.error('发布草稿失败:', error);
       throw error;
     }
   }

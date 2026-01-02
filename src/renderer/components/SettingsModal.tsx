@@ -46,6 +46,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           siteUrl: loadedConfig.wordpress?.siteUrl || '',
           username: loadedConfig.wordpress?.username || '',
           appPassword: loadedConfig.wordpress?.appPassword || '',
+          defaultCategory: loadedConfig.wordpress?.defaultCategory,
+          defaultAuthor: loadedConfig.wordpress?.defaultAuthor,
           topNotice: loadedConfig.wordpress?.topNotice || ''
         }
       });
@@ -74,6 +76,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           siteUrl: (config.wordpress?.siteUrl || '').trim(),
           username: (config.wordpress?.username || '').trim(),
           appPassword: (config.wordpress?.appPassword || '').trim(),
+          defaultCategory: config.wordpress?.defaultCategory ? Number(config.wordpress.defaultCategory) : undefined,
+          defaultAuthor: config.wordpress?.defaultAuthor ? Number(config.wordpress.defaultAuthor) : undefined,
           topNotice: (config.wordpress?.topNotice || '').trim() || undefined
         } : undefined
       };
@@ -307,11 +311,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <input type="password" value={config.wordpress?.appPassword || ''} onChange={e => handleChange('wordpress', 'appPassword', e.target.value)} placeholder="非登录密码" style={inputStyle} />
                 </div>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>默认分类 ID <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
+                  <input type="number" value={config.wordpress?.defaultCategory || ''} onChange={e => handleChange('wordpress', 'defaultCategory', e.target.value)} placeholder="如: 1" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>默认作者 ID <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
+                  <input type="number" value={config.wordpress?.defaultAuthor || ''} onChange={e => handleChange('wordpress', 'defaultAuthor', e.target.value)} placeholder="如: 1" style={inputStyle} />
+                </div>
+              </div>
               <div>
                 <label style={labelStyle}>顶部提示语 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
                 <input type="text" value={config.wordpress?.topNotice || ''} onChange={e => handleChange('wordpress', 'topNotice', e.target.value)} placeholder="文章顶部提示文字" style={inputStyle} />
               </div>
-              <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', margin: 0 }}>应用密码在 WordPress 后台 → 用户 → 个人资料 中生成</p>
+              <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', margin: 0 }}>
+                分类/作者 ID 可在 WordPress 后台相应页面 URL 中查看（如 category&tag_ID=<strong>5</strong>）<br/>
+                应用密码在 用户 → 个人资料 中生成
+              </p>
               <button onClick={testWordPress} disabled={testing === 'wordpress'} style={{ ...testBtnStyle, opacity: testing === 'wordpress' ? 0.6 : 1, alignSelf: 'flex-start' }}>
                 {testing === 'wordpress' ? '测试中...' : '🔗 测试连接'}
               </button>

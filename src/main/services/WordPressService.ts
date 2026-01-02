@@ -115,6 +115,8 @@ export class WordPressService {
         title: article.title,
         content: article.content,
         status: article.status,
+        comment_status: 'open',  // 默认开启评论
+        ping_status: 'open',     // 默认开启 Pingback
       };
 
       // 可选字段

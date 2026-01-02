@@ -196,6 +196,24 @@ export class SyncService {
         const data = fs.readFileSync(this.syncStateFile, 'utf8');
         this.syncStates = JSON.parse(data);
         console.log('已加载同步状态:', this.syncStates);
+        
+        // 启动时自动重置所有 SYNCING 状态为 FAILED（程序重启意味着之前的同步已中断）
+        let resetCount = 0;
+        for (const [articleId, state] of Object.entries(this.syncStates)) {
+          if (state.status === SyncStatus.SYNCING) {
+            this.syncStates[articleId] = {
+              ...state,
+              status: SyncStatus.FAILED,
+              error: '同步中断：程序重启',
+              lastSyncTime: Date.now()
+            };
+            resetCount++;
+          }
+        }
+        if (resetCount > 0) {
+          console.log(`已重置 ${resetCount} 个卡住的同步状态`);
+          this.saveSyncStates();
+        }
       }
     } catch (error) {
       console.error('加载同步状态失败:', error);
@@ -236,9 +254,9 @@ export class SyncService {
     return this.syncStates;
   }
 
-  // 重置卡住的同步状态（如果同步时间超过10分钟，自动重置为失败）
+  // 重置卡住的同步状态（如果同步时间超过3分钟，自动重置为失败）
   resetStuckSyncStates(): void {
-    const stuckTimeout = 10 * 60 * 1000; // 10分钟
+    const stuckTimeout = 3 * 60 * 1000; // 3分钟
     const now = Date.now();
     
     for (const [articleId, state] of Object.entries(this.syncStates)) {
@@ -247,6 +265,8 @@ export class SyncService {
         if (elapsed > stuckTimeout) {
           LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
           this.updateSyncState(articleId, SyncStatus.FAILED, '同步超时：操作时间过长，已自动重置');
+          // 清理可能残留的 controller
+          this.activeSyncControllers.delete(articleId);
         }
       }
     }

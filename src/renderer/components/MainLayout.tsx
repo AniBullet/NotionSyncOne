@@ -177,6 +177,32 @@ const MainLayout: React.FC = () => {
     await IpcService.showNotification('批量同步完成', result);
   };
 
+  // 取消同步
+  const handleCancelSync = async (articleId: string, target: SyncTarget) => {
+    try {
+      const syncKey = target === 'wordpress' ? `wp_${articleId}` : articleId;
+      await window.electron.ipcRenderer.invoke('cancel-sync', syncKey);
+      
+      // 也尝试重置状态
+      await window.electron.ipcRenderer.invoke('reset-sync-state', syncKey);
+      
+      // 更新本地状态
+      if (target === 'wechat') {
+        setSyncStates(prev => ({
+          ...prev,
+          [articleId]: { articleId, status: SyncStatus.FAILED, error: '已取消', lastSyncTime: Date.now() }
+        }));
+      } else {
+        setWpSyncStates(prev => ({
+          ...prev,
+          [articleId]: { articleId: `wp_${articleId}`, status: SyncStatus.FAILED, error: '已取消', lastSyncTime: Date.now() }
+        }));
+      }
+    } catch (error) {
+      console.error('取消同步失败:', error);
+    }
+  };
+
   // 统计
   const wechatSynced = Object.values(syncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const wpSynced = Object.values(wpSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
@@ -290,6 +316,7 @@ const MainLayout: React.FC = () => {
           hasWordPressConfig={hasWordPressConfig}
           onSync={handleSync}
           onBatchSync={handleBatchSync}
+          onCancelSync={handleCancelSync}
         />
       </main>
 

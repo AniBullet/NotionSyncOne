@@ -1,9 +1,9 @@
-# NotionSyncWechat
+# NotionSyncOne
 
 <div align="center">
-  <img src="./assets/icon.png" alt="NotionSyncWechat Logo" width="120" height="120" />
-  <h3>将 Notion 文章同步到微信公众号的桌面应用</h3>
-  <p>简洁 · 高效 · 优雅</p>
+  <img src="./assets/icon.png" alt="NotionSyncOne Logo" width="120" height="120" />
+  <h3>将 Notion 文章同步到多个平台的桌面应用</h3>
+  <p>支持 微信公众号 · WordPress · 简洁高效</p>
 </div>
 
 ![应用截图](./assets/app-screenshot.png)
@@ -12,12 +12,16 @@
 
 ### 核心功能
 - 🔄 从 Notion 数据库自动同步文章
-- 📝 智能转换为微信公众号格式
-- 📸 **自动上传图片** - 正文图片自动上传到微信素材库
+- 📝 智能转换为多平台格式（微信公众号、WordPress）
+- 📸 **自动上传图片** - 图片自动上传到目标平台
 - 🎨 美观的界面设计
 - 📊 实时同步状态显示
 - ⚙️ 简单的配置管理
 - 🔍 文章预览功能
+
+### 📦 多平台支持
+- **微信公众号** - 完整支持草稿和发布功能
+- **WordPress** - 支持 REST API，可自定义分类和标签
 
 ### 💎 排版优化
 - 💻 **代码块美化** - 带行号的专业代码块样式
@@ -40,20 +44,21 @@
 - Node.js 18+
 - pnpm（推荐）或 npm
 - Notion API Key
-- 微信公众号 AppID 和 AppSecret
+- 微信公众号 AppID 和 AppSecret（可选）
+- WordPress 站点和应用密码（可选）
 
 #### 安装步骤
 
 1. **克隆仓库**
 ```bash
-git clone https://github.com/AniBullet/NotionSyncWechat.git
-cd notionsyncwechat
+git clone https://github.com/AniBullet/NotionSyncOne.git
+cd NotionSyncOne
 ```
 
 2. **一键初始化环境（推荐）**
 ```powershell
 # Windows 用户使用 PowerShell
-.\setup.ps1
+.\scripts\setup.ps1
 ```
 
 该脚本会自动：
@@ -75,7 +80,7 @@ npm install
 3. **启动应用**
 ```bash
 # Windows 用户（推荐）
-.\start.cmd
+.\scripts\dev.cmd
 
 # 或手动启动
 pnpm dev
@@ -112,30 +117,36 @@ pnpm dev
 3. 获取 AppID 和 AppSecret
 4. **重要**：添加服务器 IP 地址到白名单
 
-### 3. 应用内配置
+### 3. WordPress 配置（可选）
+
+1. 确保您的 WordPress 版本 >= 5.6
+2. 在 WordPress 后台 → 用户 → 个人资料 → 应用密码
+3. 生成一个新的应用密码
+4. 在 NotionSyncOne 中配置站点 URL、用户名和应用密码
+
+### 4. 应用内配置
 
 1. 启动应用后点击左侧 "配置"
 2. 填入 Notion API Key 和 Database ID
-3. 填入微信公众号 AppID 和 AppSecret
-4. （可选）设置文章顶部提示语
-5. （可选）设置默认作者
-6. 点击保存
+3. 填入微信公众号 AppID 和 AppSecret（可选）
+4. 填入 WordPress 配置（可选）
+5. 点击保存
 
 ## 🎯 使用流程
 
 1. **在 Notion 中编写文章**
    - 支持文字、图片、代码块、链接等
-   - 图片会自动上传到微信素材库
+   - 图片会自动上传到目标平台
 
 2. **同步文章**
    - 点击 "刷新列表" 获取最新文章
-   - 选择文章点击 "同步到微信"
-   - 查看同步进度和结果
+   - 点击文章的 "同步" 按钮
+   - 选择目标平台（微信/WordPress/两者）
+   - 选择发布模式（草稿/直接发布）
 
-3. **查看草稿**
-   - 登录微信公众号后台
-   - 进入 "草稿箱" 查看已同步的文章
-   - 可以进一步编辑或直接发布
+3. **查看结果**
+   - 微信：登录公众号后台，进入 "草稿箱"
+   - WordPress：在站点后台查看文章列表
 
 ## 📦 打包分发
 
@@ -143,12 +154,12 @@ pnpm dev
 
 ```bash
 # Windows（推荐）
-_build.cmd          # 生产构建（推荐发布用）
-_build_DEBUG.cmd    # 调试构建（含完整日志，仅调试用）
+scripts\build.cmd          # 生产构建（推荐发布用）
+scripts\build_debug.cmd    # 调试构建（含完整日志，仅调试用）
 
 # 开发与检查
-_dev.cmd            # 开发服务器（热重载）
-_check_security.cmd # 依赖安全检查
+scripts\dev.cmd            # 开发服务器（热重载）
+scripts\check_security.cmd # 依赖安全检查
 
 # 或手动
 pnpm build          # 生产构建
@@ -160,49 +171,49 @@ pnpm audit          # 安全检查
 
 ```
 dist\
-  ├── NotionSyncWechat-1.0.0.exe         # 安装程序
-  └── NotionSyncWechat-1.0.0-portable.exe # 便携版（推荐）
+  ├── NotionSyncOne-1.0.0.exe         # 安装程序
+  └── NotionSyncOne-1.0.0-portable.exe # 便携版（推荐）
 ```
 
 **推荐分享便携版**：体积更小，无需安装，双击即用。
-
-### 日志级别说明
-
-| 构建方式 | 日志级别 | 用途 |
-|---------|---------|------|
-| `_build.cmd` | 最小 | ✅ 发布用 |
-| `_build_DEBUG.cmd` | 完整 | 🔍 调试用 |
-| `_dev.cmd` | 完整 | 💻 开发用 |
 
 ## 🛠️ 开发指南
 
 ### 项目结构
 
 ```
-src/
-├── main/              # Electron 主进程
-│   ├── services/      # 核心服务
-│   │   ├── NotionService.ts    # Notion API
-│   │   ├── WeChatService.ts    # 微信 API
-│   │   ├── SyncService.ts      # 同步逻辑
-│   │   └── ConfigService.ts    # 配置管理
-│   └── ipc/           # 进程间通信
-├── renderer/          # 前端界面
-│   ├── components/    # UI 组件
-│   └── styles/        # 样式文件
-└── shared/            # 共享类型和工具
-    └── types/         # TypeScript 类型定义
+├── assets/            # 应用资源文件
+├── docs/              # 文档
+├── public/            # 公共资源
+├── scripts/           # 构建脚本
+├── src/
+│   ├── main/          # Electron 主进程
+│   │   ├── services/  # 核心服务
+│   │   │   ├── NotionService.ts     # Notion API
+│   │   │   ├── WeChatService.ts     # 微信 API
+│   │   │   ├── WordPressService.ts  # WordPress API
+│   │   │   ├── SyncService.ts       # 同步逻辑
+│   │   │   └── ConfigService.ts     # 配置管理
+│   │   └── ipc/       # 进程间通信
+│   ├── renderer/      # 前端界面
+│   │   ├── components/# UI 组件
+│   │   └── styles/    # 样式文件
+│   └── shared/        # 共享类型和工具
+│       └── types/     # TypeScript 类型定义
+├── package.json
+└── vite.config.ts
 ```
 
 ### 关键技术
 
 - **Electron** - 桌面应用框架
-- **Vue 3** + **React** - 前端框架（混合使用）
+- **React** - 前端框架
 - **TypeScript** - 类型安全
 - **Vite** - 构建工具
 - **Tailwind CSS** - 样式框架
 - **Notion API** - 获取文章内容
 - **微信公众平台 API** - 上传图片和发布文章
+- **WordPress REST API** - WordPress 文章管理
 
 ### 开发命令
 
@@ -215,21 +226,20 @@ pnpm preview          # 预览构建结果
 ## ⚠️ 常见问题
 
 ### Q: 图片上传失败？
-**A:** 检查图片来源是否有防盗链，应用会自动使用 Notion 代理绕过。
+**A:** 检查图片来源是否有防盗链，应用会自动使用代理绕过。
 
 ### Q: 同步失败？
 **A:** 
 1. 检查 Notion API Key 和 Database ID 是否正确
 2. 确保已将 integration 添加到数据库权限
 3. 检查微信公众号配置和 IP 白名单
+4. 检查 WordPress 应用密码是否正确
 
-### Q: 代码块或链接样式不对？
-**A:** 确保重启了应用，修改后的样式需要重新编译。
-
-### Q: 启动后界面空白？
-**A:** 
-1. 检查是否有防火墙拦截
-2. 删除 `out/` 目录后重新运行 `pnpm dev`
+### Q: WordPress 连接失败？
+**A:**
+1. 确保站点 URL 正确（包含 https://）
+2. 确保 WordPress 版本 >= 5.6
+3. 检查应用密码是否正确生成
 
 更多问题请查看 [快速开始指南](./docs/QUICK_START.md)
 
@@ -265,14 +275,17 @@ pnpm preview          # 预览构建结果
 - [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
 - [Notion API](https://developers.notion.com/) - Notion 官方 API
 - [微信公众平台](https://mp.weixin.qq.com/) - 微信公众号 API
+- [WordPress REST API](https://developer.wordpress.org/rest-api/) - WordPress API
 - [Wheeeeeeeeels/zaka-notion2pubflow](https://github.com/Wheeeeeeeeels/zaka-notion2pubflow) - 项目灵感来源
 - [nmvr2600/notion2wechat](https://github.com/nmvr2600/notion2wechat) - 排版优化参考
 
 ## 📚 文档
 
 - [快速开始指南](./docs/QUICK_START.md)
-- [部署指南](./DEPLOY.md)
+- [部署指南](./docs/DEPLOY.md)
 - [更新日志](./docs/CHANGELOG.md)
+- [贡献指南](./docs/CONTRIBUTING.md)
+- [安全说明](./docs/SECURITY.md)
 
 ---
 

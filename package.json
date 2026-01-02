@@ -1,16 +1,16 @@
 {
-  "name": "notionsyncwechat",
+  "name": "notionsyncone",
   "version": "1.0.0",
-  "description": "NotionSyncWechat",
+  "description": "NotionSyncOne - 将 Notion 文章同步到多个平台（微信公众号、WordPress）",
   "main": "out/main/index.js",
   "author": "Bullet.S",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AniBullet/notionsyncwechat.git"
+    "url": "https://github.com/AniBullet/NotionSyncOne.git"
   },
-  "homepage": "https://github.com/AniBullet/notionsyncwechat#readme",
+  "homepage": "https://github.com/AniBullet/NotionSyncOne#readme",
   "bugs": {
-    "url": "https://github.com/AniBullet/notionsyncwechat/issues"
+    "url": "https://github.com/AniBullet/NotionSyncOne/issues"
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development vite",
@@ -23,8 +23,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.notionsyncwechat",
-    "productName": "NotionSyncWechat",
+    "appId": "com.notionsyncone",
+    "productName": "NotionSyncOne",
     "copyright": "Copyright © 2025 Bullet.S",
     "directories": {
       "output": "dist",
@@ -74,13 +74,14 @@
       "differentialPackage": true
     },
     "portable": {
-      "artifactName": "NotionSyncWechat-${version}-portable.exe"
+      "artifactName": "NotionSyncOne-${version}-portable.exe"
     },
-    "artifactName": "NotionSyncWechat-${version}.${ext}"
+    "artifactName": "NotionSyncOne-${version}.${ext}"
   },
   "keywords": [
     "notion",
     "wechat",
+    "wordpress",
     "sync",
     "electron"
   ],

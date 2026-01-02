@@ -1,8 +1,11 @@
-﻿# NotionSyncWechat 环境初始化脚本 (Windows)
+# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
+# 切换到项目根目录
+Set-Location -Path (Split-Path -Parent $PSScriptRoot)
+
 Write-Host "======================================"
-Write-Host "  NotionSyncWechat 环境初始化"
+Write-Host "  NotionSyncOne 环境初始化"
 Write-Host "======================================"
 Write-Host ""
 
@@ -113,7 +116,10 @@ Write-Host "  安装完成！"
 Write-Host "======================================"
 Write-Host ""
 Write-Host "可用命令："
-Write-Host "  npm run dev     - 启动开发服务器"
-Write-Host "  npm run build   - 构建生产版本"
+Write-Host "  pnpm dev        - 启动开发服务器"
+Write-Host "  pnpm build      - 构建生产版本"
 Write-Host ""
-
+Write-Host "或使用脚本："
+Write-Host "  .\scripts\dev.cmd    - 启动开发服务器"
+Write-Host "  .\scripts\build.cmd  - 构建生产版本"
+Write-Host ""

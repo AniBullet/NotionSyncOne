@@ -1,9 +1,11 @@
 import { NotionService } from './NotionService';
 import { WeChatService } from './WeChatService';
+import { WordPressService } from './WordPressService';
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { NotionPage, NotionBlock } from '../../shared/types/notion';
 import { WeChatArticle } from '../../shared/types/wechat';
+import { WordPressArticle } from '../../shared/types/wordpress';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import { themes, ThemeStyles } from '../../shared/types/theme';
@@ -18,18 +20,39 @@ interface RichText {
 export class SyncService {
   private notionService: NotionService;
   private weChatService: WeChatService;
+  private wordPressService: WordPressService | null = null;
   private configService: ConfigService;
   private syncStates: { [key: string]: SyncState } = {};
   private syncStateFile: string;
   // 跟踪正在进行的同步操作，用于取消
   private activeSyncControllers: Map<string, AbortController> = new Map();
 
-  constructor(notionService: NotionService, weChatService: WeChatService, configService: ConfigService) {
+  constructor(
+    notionService: NotionService, 
+    weChatService: WeChatService, 
+    configService: ConfigService,
+    wordPressService?: WordPressService | null
+  ) {
     this.notionService = notionService;
     this.weChatService = weChatService;
     this.configService = configService;
+    this.wordPressService = wordPressService || null;
     this.syncStateFile = path.join(app.getPath('userData'), 'sync-states.json');
     this.loadSyncStates();
+  }
+
+  /**
+   * 设置 WordPress 服务（用于后续初始化）
+   */
+  setWordPressService(service: WordPressService | null): void {
+    this.wordPressService = service;
+  }
+
+  /**
+   * 获取 WordPress 服务
+   */
+  getWordPressService(): WordPressService | null {
+    return this.wordPressService;
   }
 
   /**
@@ -999,5 +1022,304 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
         return '';
       }
     }
+  }
+
+  // ==================== WordPress 同步方法 ====================
+
+  /**
+   * 同步文章到 WordPress
+   */
+  async syncArticleToWordPress(
+    articleId: string, 
+    status: 'publish' | 'draft' = 'draft'
+  ): Promise<SyncState> {
+    // 如果已经有正在进行的同步，先取消它
+    const wpSyncKey = `wp_${articleId}`;
+    if (this.activeSyncControllers.has(wpSyncKey)) {
+      LogService.warn(`文章 ${articleId} 已有正在进行的 WordPress 同步，先取消旧同步`, 'SyncService');
+      this.cancelSync(wpSyncKey);
+    }
+
+    // 创建新的 AbortController
+    const abortController = new AbortController();
+    this.activeSyncControllers.set(wpSyncKey, abortController);
+
+    // 添加超时机制
+    const timeout = 10 * 60 * 1000; // 10 分钟
+    const timeoutPromise = new Promise<SyncState>((_, reject) => {
+      setTimeout(() => {
+        abortController.abort();
+        reject(new Error('WordPress 同步超时'));
+      }, timeout);
+    });
+
+    const syncPromise = this._syncArticleToWordPressInternal(articleId, status, abortController.signal);
+
+    try {
+      const result = await Promise.race([syncPromise, timeoutPromise]);
+      this.activeSyncControllers.delete(wpSyncKey);
+      return result;
+    } catch (error) {
+      this.activeSyncControllers.delete(wpSyncKey);
+      if (error instanceof Error && (error.message.includes('超时') || error.message.includes('已取消'))) {
+        const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, error.message);
+        return failedState;
+      }
+      throw error;
+    }
+  }
+
+  private async _syncArticleToWordPressInternal(
+    articleId: string,
+    status: 'publish' | 'draft',
+    abortSignal?: AbortSignal
+  ): Promise<SyncState> {
+    const wpSyncKey = `wp_${articleId}`;
+    
+    try {
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
+
+      LogService.log('========== 开始同步文章到 WordPress ==========', 'SyncService');
+      LogService.log(`文章ID: ${articleId}`, 'SyncService');
+      LogService.log(`发布状态: ${status}`, 'SyncService');
+      this.updateSyncState(wpSyncKey, SyncStatus.SYNCING);
+
+      // 验证服务是否初始化
+      if (!this.notionService) {
+        throw new Error('Notion 服务未初始化');
+      }
+      if (!this.wordPressService) {
+        throw new Error('WordPress 服务未初始化，请先配置 WordPress 信息');
+      }
+
+      // 获取 Notion 文章内容
+      LogService.log('正在获取文章属性...', 'SyncService');
+      const page = await this.notionService.getPageProperties(articleId);
+      LogService.log(`文章标题: ${page.title}`, 'SyncService');
+
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
+
+      // 获取文章内容
+      LogService.log('正在获取文章内容...', 'SyncService');
+      const blocks = await this.notionService.getPageContent(articleId);
+      LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
+
+      if (!blocks || blocks.length === 0) {
+        throw new Error('文章内容为空');
+      }
+
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
+
+      // 获取封面图片
+      const mainImage = this.getCoverImageUrl(page);
+      LogService.log(`封面图片: ${mainImage || '未找到'}`, 'SyncService');
+
+      // 提取所有图片 URL 并上传到 WordPress
+      const imageUrls = this.extractImageUrls(blocks, mainImage);
+      LogService.log(`提取到 ${imageUrls.length} 张图片`, 'SyncService');
+
+      const imageUrlMap = new Map<string, string>();
+      let featuredMediaId: number | undefined;
+
+      // 上传封面图片
+      if (mainImage) {
+        try {
+          LogService.log('正在上传封面图片到 WordPress...', 'SyncService');
+          const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
+          featuredMediaId = coverMedia.id;
+          imageUrlMap.set(mainImage, coverMedia.source_url);
+          LogService.success(`封面图片上传成功，media_id: ${coverMedia.id}`, 'SyncService');
+        } catch (error) {
+          LogService.warn(`封面图片上传失败: ${error instanceof Error ? error.message : String(error)}`, 'SyncService');
+        }
+      }
+
+      // 上传文章中的其他图片
+      if (imageUrls.length > 0) {
+        LogService.log('========== 开始上传文章图片到 WordPress ==========', 'SyncService');
+        for (let i = 0; i < imageUrls.length; i++) {
+          if (abortSignal?.aborted) {
+            throw new Error('同步已取消');
+          }
+
+          const imageUrl = imageUrls[i];
+          if (imageUrlMap.has(imageUrl)) continue; // 跳过已上传的
+
+          try {
+            LogService.log(`[${i + 1}/${imageUrls.length}] 正在上传: ${imageUrl.substring(0, 50)}...`, 'SyncService');
+            const media = await this.wordPressService.uploadMedia(imageUrl, undefined, abortSignal);
+            imageUrlMap.set(imageUrl, media.source_url);
+            LogService.success(`✓ 上传成功`, 'SyncService');
+          } catch (error) {
+            LogService.error(`✗ 上传失败: ${error instanceof Error ? error.message : String(error)}`, 'SyncService');
+          }
+        }
+        LogService.success(`========== 图片上传完成: ${imageUrlMap.size}/${imageUrls.length + (mainImage ? 1 : 0)} 成功 ==========`, 'SyncService');
+      }
+
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
+
+      // 转换文章格式
+      LogService.log('正在转换文章格式...', 'SyncService');
+      const wpArticle = this.convertToWordPressArticle(page, blocks, status, imageUrlMap, featuredMediaId);
+      LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
+
+      // 发布到 WordPress
+      LogService.log(`========== 开始${status === 'publish' ? '发布' : '保存草稿'}到 WordPress ==========`, 'SyncService');
+      const post = await this.wordPressService.publishArticle(wpArticle, abortSignal);
+      
+      LogService.success(`========== WordPress ${status === 'publish' ? '发布' : '草稿保存'}成功 ==========`, 'SyncService');
+      LogService.log(`文章链接: ${post.link}`, 'SyncService');
+
+      const successState = this.updateSyncState(wpSyncKey, SyncStatus.SUCCESS);
+      return successState;
+    } catch (error) {
+      LogService.error('========== WordPress 同步失败 ==========', 'SyncService');
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      LogService.error(`错误: ${errorMessage}`, 'SyncService');
+      const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, errorMessage);
+      return failedState;
+    }
+  }
+
+  /**
+   * 同时同步文章到微信和 WordPress
+   */
+  async syncArticleToBoth(
+    articleId: string,
+    wechatMode: 'publish' | 'draft' = 'draft',
+    wpStatus: 'publish' | 'draft' = 'draft'
+  ): Promise<{ wechat: SyncState; wordpress: SyncState }> {
+    LogService.log('========== 开始同时同步到微信和 WordPress ==========', 'SyncService');
+    
+    // 并行执行两个同步任务
+    const [wechatResult, wpResult] = await Promise.allSettled([
+      this.syncArticle(articleId, wechatMode),
+      this.syncArticleToWordPress(articleId, wpStatus),
+    ]);
+
+    const wechatState: SyncState = wechatResult.status === 'fulfilled' 
+      ? wechatResult.value 
+      : { articleId, status: SyncStatus.FAILED, lastSyncTime: Date.now(), error: String(wechatResult.reason) };
+
+    const wpState: SyncState = wpResult.status === 'fulfilled'
+      ? wpResult.value
+      : { articleId: `wp_${articleId}`, status: SyncStatus.FAILED, lastSyncTime: Date.now(), error: String(wpResult.reason) };
+
+    LogService.log(`微信同步结果: ${wechatState.status}`, 'SyncService');
+    LogService.log(`WordPress 同步结果: ${wpState.status}`, 'SyncService');
+
+    return { wechat: wechatState, wordpress: wpState };
+  }
+
+  /**
+   * 将 Notion 内容转换为 WordPress 文章格式
+   */
+  private convertToWordPressArticle(
+    page: NotionPage,
+    blocks: NotionBlock[],
+    status: 'publish' | 'draft',
+    imageUrlMap?: Map<string, string>,
+    featuredMediaId?: number
+  ): WordPressArticle {
+    // 构建文章内容 HTML
+    let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap);
+
+    // 获取文章属性
+    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
+    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+
+    // 创建文章信息头部（简化版，WordPress 通常不需要太多内联样式）
+    const articleInfoHtml = this.createWordPressArticleInfo(page, linkStart, from, author);
+    if (articleInfoHtml) {
+      articleContent = articleInfoHtml + '\n\n' + articleContent;
+    }
+
+    // 获取摘要
+    const excerpt = from || page.title.substring(0, 150);
+
+    // 获取标签（从 FeatureTag 属性）
+    const featureTag = page.properties.FeatureTag;
+    const tagNames: string[] = [];
+    if (featureTag) {
+      if (featureTag.type === 'select' && featureTag.select) {
+        tagNames.push(featureTag.select.name);
+      } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
+        tagNames.push(...featureTag.multi_select.map((tag: any) => tag.name));
+      }
+    }
+
+    return {
+      title: page.title,
+      content: articleContent,
+      status,
+      excerpt,
+      featured_media: featuredMediaId,
+      meta: {
+        // 可以添加 SEO 相关的元数据
+        _source_url: linkStart,
+        _source_author: author,
+        _source_from: from,
+      },
+    };
+  }
+
+  /**
+   * 创建 WordPress 文章信息头部
+   */
+  private createWordPressArticleInfo(
+    page: NotionPage,
+    linkStart: string,
+    from: string,
+    author: string
+  ): string {
+    const infoItems: string[] = [];
+
+    if (linkStart) {
+      infoItems.push(`<strong>原文链接:</strong> <a href="${linkStart}" target="_blank">${linkStart}</a>`);
+    }
+    if (from) {
+      infoItems.push(`<strong>来源:</strong> ${this.escapeHtml(from)}`);
+    }
+    if (author) {
+      infoItems.push(`<strong>作者:</strong> ${this.escapeHtml(author)}`);
+    }
+
+    // AddedTime
+    const addedTimeProperty = page.properties.AddedTime;
+    let addedTime = '';
+    if (addedTimeProperty) {
+      if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
+        addedTime = addedTimeProperty.date.start;
+      } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
+        addedTime = addedTimeProperty.created_time;
+      }
+    }
+    if (!addedTime && page.addedTime) {
+      addedTime = page.addedTime;
+    }
+    if (addedTime) {
+      const date = new Date(addedTime);
+      const formattedDate = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      infoItems.push(`<strong>添加日期:</strong> ${formattedDate}`);
+    }
+
+    if (infoItems.length === 0) {
+      return '';
+    }
+
+    // 使用简洁的 WordPress 兼容格式
+    return `<div class="article-meta" style="background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-left: 4px solid #0073aa; border-radius: 4px;">
+${infoItems.map(item => `<p style="margin: 5px 0;">${item}</p>`).join('\n')}
+</div>`;
   }
 } 

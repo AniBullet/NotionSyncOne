@@ -1,14 +1,14 @@
 # 贡献指南
 
-感谢你考虑为 NotionSyncWechat 做出贡献！
+感谢你考虑为 NotionSyncOne 做出贡献！
 
 ## 🚀 快速开始
 
 ### 1. Fork 并克隆仓库
 
 ```bash
-git clone https://github.com/AniBullet/notionsyncwechat.git
-cd notionsyncwechat
+git clone https://github.com/AniBullet/NotionSyncOne.git
+cd NotionSyncOne
 ```
 
 ### 2. 安装依赖
@@ -20,7 +20,7 @@ pnpm install
 ### 3. 启动开发服务器
 
 ```bash
-.\start.cmd   # Windows
+.\scripts\dev.cmd   # Windows
 # 或
 pnpm dev
 ```
@@ -94,7 +94,7 @@ pnpm test
 ## 📦 构建
 
 ```bash
-.\build.cmd   # Windows
+.\scripts\build.cmd   # Windows
 # 或
 pnpm build
 ```
@@ -158,6 +158,7 @@ Close #xxx
 - [Electron 文档](https://www.electronjs.org/docs)
 - [Notion API 文档](https://developers.notion.com/)
 - [微信公众平台文档](https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Overview.html)
+- [WordPress REST API 文档](https://developer.wordpress.org/rest-api/)
 
 ## 🙏 感谢
 
@@ -166,4 +167,3 @@ Close #xxx
 ---
 
 有任何问题，欢迎在 Issue 中讨论！
-

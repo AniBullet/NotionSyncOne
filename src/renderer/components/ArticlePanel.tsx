@@ -4,13 +4,16 @@ import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { IpcService } from '../../shared/services/IpcService';
 import ArticleList from './ArticleList';
 import ConfirmDialog from './ConfirmDialog';
+import { SyncTarget } from './SyncButton';
 
 const ArticlePanel: React.FC = () => {
   const [syncStates, setSyncStates] = useState<Record<string, SyncState>>({});
+  const [wpSyncStates, setWpSyncStates] = useState<Record<string, SyncState>>({});
   const [articles, setArticles] = useState<NotionPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedArticles, setSelectedArticles] = useState<string[]>([]);
+  const [hasWordPressConfig, setHasWordPressConfig] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -26,6 +29,7 @@ const ArticlePanel: React.FC = () => {
   useEffect(() => {
     loadArticles();
     loadSyncStates();
+    checkWordPressConfig();
   }, []);
 
   const loadArticles = async () => {
@@ -45,9 +49,32 @@ const ArticlePanel: React.FC = () => {
   const loadSyncStates = async () => {
     try {
       const states = await window.electron.ipcRenderer.invoke('get-all-sync-states');
-      setSyncStates(states || {});
+      // 分离微信和 WordPress 状态
+      const wechatStates: Record<string, SyncState> = {};
+      const wpStates: Record<string, SyncState> = {};
+      
+      Object.entries(states || {}).forEach(([key, state]) => {
+        if (key.startsWith('wp_')) {
+          wpStates[key.replace('wp_', '')] = state as SyncState;
+        } else {
+          wechatStates[key] = state as SyncState;
+        }
+      });
+      
+      setSyncStates(wechatStates);
+      setWpSyncStates(wpStates);
     } catch (err) {
       console.error('加载同步状态失败:', err);
+    }
+  };
+
+  const checkWordPressConfig = async () => {
+    try {
+      const config = await IpcService.getConfig();
+      const hasWp = !!(config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword);
+      setHasWordPressConfig(hasWp);
+    } catch (err) {
+      console.error('检查 WordPress 配置失败:', err);
     }
   };
 
@@ -61,17 +88,29 @@ const ArticlePanel: React.FC = () => {
     });
   };
 
-  const handleSyncWithConfirm = (articleId: string) => {
+  const handleSyncWithConfirm = (articleId: string, target: SyncTarget, mode: 'publish' | 'draft') => {
     const article = articles.find(a => a.id === articleId);
     if (!article) return;
+
+    // 构建确认消息
+    let targetText = '';
+    if (target === 'wechat') {
+      targetText = '微信公众号';
+    } else if (target === 'wordpress') {
+      targetText = 'WordPress';
+    } else {
+      targetText = '微信公众号和 WordPress';
+    }
+    
+    const modeText = mode === 'draft' ? '草稿' : '直接发布';
 
     setConfirmDialog({
       isOpen: true,
       title: '确认同步',
-      message: `确定要将文章《${article.title}》同步到微信公众号草稿箱吗？`,
+      message: `确定要将文章《${article.title}》${mode === 'draft' ? '保存为' : ''}${modeText}到 ${targetText} 吗？`,
       onConfirm: () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        handleSync(articleId);
+        handleSync(articleId, target, mode);
       }
     });
   };
@@ -91,7 +130,7 @@ const ArticlePanel: React.FC = () => {
         
         // 依次同步选中的文章
         for (const articleId of selectedArticles) {
-          await handleSync(articleId);
+          await handleSync(articleId, 'wechat', 'draft');
           // 稍微延迟，避免请求过快
           await new Promise(resolve => setTimeout(resolve, 500));
         }
@@ -103,56 +142,110 @@ const ArticlePanel: React.FC = () => {
     });
   };
 
-  const handleSync = async (articleId: string) => {
+  const handleSync = async (articleId: string, target: SyncTarget = 'wechat', mode: 'publish' | 'draft' = 'draft') => {
     try {
-      console.log('开始同步文章:', articleId);
+      console.log('开始同步文章:', articleId, '目标:', target, '模式:', mode);
       
       // 设置同步中状态
-      setSyncStates(prev => ({
-        ...prev,
-        [articleId]: {
-          articleId,
-          status: SyncStatus.SYNCING,
-        },
-      }));
-
-      // 执行同步（默认保存为草稿）
-      console.log('调用 syncArticle，模式: draft');
-      const state = await IpcService.syncArticle(articleId, 'draft');
-      console.log('同步完成，返回状态:', state);
-      
-      // 使用返回的状态更新
-      setSyncStates(prev => ({
-        ...prev,
-        [articleId]: state,
-      }));
-      
-      // 显示成功通知
-      if (state.status === SyncStatus.SUCCESS) {
-        console.log('同步成功，显示通知');
-        await IpcService.showNotification('同步成功', '文章已保存到微信公众号草稿箱');
-      } else if (state.status === SyncStatus.FAILED) {
-        console.log('同步失败，显示错误通知:', state.error);
-        await IpcService.showNotification('同步失败', state.error || '未知错误');
+      if (target === 'wechat' || target === 'both') {
+        setSyncStates(prev => ({
+          ...prev,
+          [articleId]: {
+            articleId,
+            status: SyncStatus.SYNCING,
+          },
+        }));
       }
       
-      await loadArticles(); // 同步后重新加载文章列表
-      await loadSyncStates(); // 重新加载同步状态
+      if (target === 'wordpress' || target === 'both') {
+        setWpSyncStates(prev => ({
+          ...prev,
+          [articleId]: {
+            articleId: `wp_${articleId}`,
+            status: SyncStatus.SYNCING,
+          },
+        }));
+      }
+
+      let resultMessage = '';
+      
+      if (target === 'wechat') {
+        // 只同步到微信
+        const state = await IpcService.syncArticle(articleId, mode);
+        setSyncStates(prev => ({ ...prev, [articleId]: state }));
+        
+        if (state.status === SyncStatus.SUCCESS) {
+          resultMessage = `文章已${mode === 'draft' ? '保存到微信公众号草稿箱' : '发布到微信公众号'}`;
+        } else if (state.status === SyncStatus.FAILED) {
+          resultMessage = `微信同步失败: ${state.error || '未知错误'}`;
+        }
+      } else if (target === 'wordpress') {
+        // 只同步到 WordPress
+        const state = await IpcService.syncToWordPress(articleId, mode);
+        setWpSyncStates(prev => ({ ...prev, [articleId]: state }));
+        
+        if (state.status === SyncStatus.SUCCESS) {
+          resultMessage = `文章已${mode === 'draft' ? '保存到 WordPress 草稿' : '发布到 WordPress'}`;
+        } else if (state.status === SyncStatus.FAILED) {
+          resultMessage = `WordPress 同步失败: ${state.error || '未知错误'}`;
+        }
+      } else if (target === 'both') {
+        // 同时同步到两个平台
+        const result = await IpcService.syncToBoth(articleId, mode, mode);
+        setSyncStates(prev => ({ ...prev, [articleId]: result.wechat }));
+        setWpSyncStates(prev => ({ ...prev, [articleId]: result.wordpress }));
+        
+        const wechatSuccess = result.wechat.status === SyncStatus.SUCCESS;
+        const wpSuccess = result.wordpress.status === SyncStatus.SUCCESS;
+        
+        if (wechatSuccess && wpSuccess) {
+          resultMessage = `文章已同步到微信和 WordPress`;
+        } else if (wechatSuccess) {
+          resultMessage = `微信同步成功，WordPress 失败: ${result.wordpress.error}`;
+        } else if (wpSuccess) {
+          resultMessage = `WordPress 同步成功，微信失败: ${result.wechat.error}`;
+        } else {
+          resultMessage = `同步失败: 微信(${result.wechat.error}), WordPress(${result.wordpress.error})`;
+        }
+      }
+      
+      // 显示通知
+      const isSuccess = resultMessage && !resultMessage.includes('失败');
+      await IpcService.showNotification(
+        isSuccess ? '同步成功' : '同步完成',
+        resultMessage
+      );
+      
+      await loadArticles();
+      await loadSyncStates();
     } catch (error) {
       console.error('同步文章失败:', error);
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       
-      setSyncStates(prev => ({
-        ...prev,
-        [articleId]: {
-          articleId,
-          status: SyncStatus.FAILED,
-          error: errorMessage,
-          lastSyncTime: Date.now(),
-        },
-      }));
+      if (target === 'wechat' || target === 'both') {
+        setSyncStates(prev => ({
+          ...prev,
+          [articleId]: {
+            articleId,
+            status: SyncStatus.FAILED,
+            error: errorMessage,
+            lastSyncTime: Date.now(),
+          },
+        }));
+      }
       
-      // 显示错误通知
+      if (target === 'wordpress' || target === 'both') {
+        setWpSyncStates(prev => ({
+          ...prev,
+          [articleId]: {
+            articleId: `wp_${articleId}`,
+            status: SyncStatus.FAILED,
+            error: errorMessage,
+            lastSyncTime: Date.now(),
+          },
+        }));
+      }
+      
       await IpcService.showNotification('同步失败', errorMessage);
     }
   };
@@ -280,8 +373,10 @@ const ArticlePanel: React.FC = () => {
           error={error}
           onSync={handleSyncWithConfirm}
           syncStates={syncStates}
+          wpSyncStates={wpSyncStates}
           selectedArticles={selectedArticles}
           onSelectArticle={handleSelectArticle}
+          hasWordPressConfig={hasWordPressConfig}
         />
       </div>
 

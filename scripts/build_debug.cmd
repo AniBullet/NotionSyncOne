@@ -1,11 +1,11 @@
 @echo off
 REM 开发环境构建 - 包含完整调试日志（仅用于调试问题）
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 chcp 65001 > nul
 echo.
 echo =====================================
-echo   开发构建 - DEBUG 模式
+echo   NotionSyncOne 开发构建 - DEBUG 模式
 echo   包含完整调试日志
 echo =====================================
 echo.
@@ -59,7 +59,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   ✓ DEBUG 构建完成！
     echo.
     echo   [提示] 此版本包含调试日志，仅用于测试
-    echo   [提示] 发布请使用: _build.cmd
+    echo   [提示] 发布请使用: scripts\build.cmd
     echo.
     if exist "dist\win-unpacked" rd /s /q "dist\win-unpacked"
     dir dist\*.exe /b 2>nul
@@ -69,4 +69,3 @@ if %ERRORLEVEL% EQU 0 (
 echo =====================================
 echo.
 pause
-

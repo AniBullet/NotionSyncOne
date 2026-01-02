@@ -1,18 +1,31 @@
 import React from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
+import SyncButton, { SyncTarget } from './SyncButton';
 
 interface ArticleListProps {
   articles: NotionPage[];
   loading: boolean;
   error: string | null;
-  onSync: (pageId: string) => Promise<void>;
+  onSync: (pageId: string, target: SyncTarget, mode: 'publish' | 'draft') => void;
   syncStates: Record<string, SyncState>;
+  wpSyncStates?: Record<string, SyncState>;
   selectedArticles: string[];
   onSelectArticle: (articleId: string) => void;
+  hasWordPressConfig?: boolean;
 }
 
-const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onSync, syncStates, selectedArticles, onSelectArticle }) => {
+const ArticleList: React.FC<ArticleListProps> = ({ 
+  articles, 
+  loading, 
+  error, 
+  onSync, 
+  syncStates, 
+  wpSyncStates = {},
+  selectedArticles, 
+  onSelectArticle,
+  hasWordPressConfig = false
+}) => {
   if (loading) {
     return <div style={{ padding: 'var(--spacing-lg)', color: 'var(--text-secondary)', textAlign: 'center' }}>⏳ 加载中...</div>;
   }
@@ -31,34 +44,6 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
     return tag;
   };
 
-  const getSyncStatusColor = (state?: SyncState) => {
-    if (!state) return 'text-gray-500';
-    switch (state.status) {
-      case SyncStatus.SUCCESS:
-        return 'text-green-500';
-      case SyncStatus.FAILED:
-        return 'text-red-500';
-      case SyncStatus.SYNCING:
-        return 'text-blue-500';
-      default:
-        return 'text-gray-500';
-    }
-  };
-
-  const getSyncStatusText = (state?: SyncState) => {
-    if (!state) return '未同步';
-    switch (state.status) {
-      case SyncStatus.SUCCESS:
-        return '同步成功';
-      case SyncStatus.FAILED:
-        return '同步失败';
-      case SyncStatus.SYNCING:
-        return '同步中...';
-      default:
-        return '未同步';
-    }
-  };
-
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 'var(--spacing-lg)', padding: 'var(--spacing-lg)' }}>
       {articles.map((article) => {
@@ -68,8 +53,8 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
             ? article.cover.external?.url
             : article.cover?.file?.url;
 
-        const syncState = syncStates[article.id];
-        const isSyncing = syncState?.status === SyncStatus.SYNCING;
+        const syncState = syncStates[article.id] || { articleId: article.id, status: SyncStatus.PENDING };
+        const wpSyncState = wpSyncStates[article.id];
         const isSelected = selectedArticles.includes(article.id);
         
         return (
@@ -121,64 +106,60 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
               </div>
             )}
 
-            {/* 同步状态徽章 - 移到右上角火箭按钮下方 */}
-            {syncState && (
-              <div 
-                className={`badge badge-${syncState.status === SyncStatus.SUCCESS ? 'success' : syncState.status === SyncStatus.FAILED ? 'error' : 'warning'}`}
-                style={{ 
-                  position: 'absolute',
-                  top: '60px',
-                  right: 'var(--spacing-md)',
-                  fontSize: '10px',
-                  padding: '3px 6px',
-                  zIndex: 15
-                }}
-              >
-                {syncState.status === SyncStatus.SUCCESS ? '✓' : syncState.status === SyncStatus.FAILED ? '✗' : '◷'}
-              </div>
-            )}
+            {/* 同步按钮 - 右上角 */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 'var(--spacing-md)',
+                right: 'var(--spacing-md)',
+                zIndex: 20,
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <SyncButton
+                articleId={article.id}
+                state={syncState}
+                wpState={wpSyncState}
+                onSync={onSync}
+                hasWordPressConfig={hasWordPressConfig}
+              />
+            </div>
 
-            {/* 顶部右上角操作按钮：仅在同步中时展示“取消” */}
-            {isSyncing && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'var(--spacing-md)',
-                  right: 'var(--spacing-md)',
-                  zIndex: 20,
-                }}
-                onClick={e => e.stopPropagation()}
-              >
-                <button
-                  title="取消本次同步"
-                  style={{
-                    padding: '2px 10px',
-                    borderRadius: '999px',
-                    border: '1px solid rgba(239,68,68,0.4)',
-                    backgroundColor: 'rgba(239,68,68,0.12)',
-                    color: '#FCA5A5',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    fontWeight: 500,
+            {/* 同步状态徽章 - 微信和 WordPress */}
+            <div style={{ 
+              position: 'absolute',
+              top: '56px',
+              right: 'var(--spacing-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              zIndex: 15
+            }}>
+              {syncState && syncState.status !== SyncStatus.PENDING && (
+                <div 
+                  className={`badge badge-${syncState.status === SyncStatus.SUCCESS ? 'success' : syncState.status === SyncStatus.FAILED ? 'error' : 'warning'}`}
+                  style={{ 
+                    fontSize: '10px',
+                    padding: '3px 6px',
                   }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.18)';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.12)';
-                  }}
-                  onClick={async () => {
-                    try {
-                      await window.electron.cancelSync(article.id);
-                    } catch (err) {
-                      console.error('取消同步失败:', err);
-                    }
-                  }}
+                  title={`微信: ${syncState.status === SyncStatus.SUCCESS ? '同步成功' : syncState.status === SyncStatus.FAILED ? '同步失败' : '同步中'}`}
                 >
-                  取消
-                </button>
-              </div>
-            )}
+                  💬 {syncState.status === SyncStatus.SUCCESS ? '✓' : syncState.status === SyncStatus.FAILED ? '✗' : '◷'}
+                </div>
+              )}
+              {wpSyncState && wpSyncState.status !== SyncStatus.PENDING && (
+                <div 
+                  className={`badge badge-${wpSyncState.status === SyncStatus.SUCCESS ? 'success' : wpSyncState.status === SyncStatus.FAILED ? 'error' : 'warning'}`}
+                  style={{ 
+                    fontSize: '10px',
+                    padding: '3px 6px',
+                  }}
+                  title={`WordPress: ${wpSyncState.status === SyncStatus.SUCCESS ? '同步成功' : wpSyncState.status === SyncStatus.FAILED ? '同步失败' : '同步中'}`}
+                >
+                  📝 {wpSyncState.status === SyncStatus.SUCCESS ? '✓' : wpSyncState.status === SyncStatus.FAILED ? '✗' : '◷'}
+                </div>
+              )}
+            </div>
 
             {/* 封面图（如果有） */}
             {coverUrl && (
@@ -271,7 +252,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
                     <span>✍️ {article.author}</span>
                   </>
                 )}
-                {/* 不显眼的“打开 Notion 页面”入口 */}
+                {/* 不显眼的"打开 Notion 页面"入口 */}
                 {article.url && (
                   <>
                     <span style={{ margin: '0 4px' }}>•</span>
@@ -340,7 +321,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
             </div>
 
             {/* 错误信息 */}
-            {syncState?.error && (
+            {(syncState?.error || wpSyncState?.error) && (
               <div style={{ 
                 marginTop: 'var(--spacing-md)',
                 padding: 'var(--spacing-sm)',
@@ -353,9 +334,9 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}
-              title={syncState.error}
+              title={`${syncState?.error ? '微信: ' + syncState.error : ''} ${wpSyncState?.error ? 'WordPress: ' + wpSyncState.error : ''}`}
               >
-                ⚠️ {syncState.error}
+                ⚠️ {syncState?.error || wpSyncState?.error}
               </div>
             )}
           </div>
@@ -365,4 +346,4 @@ const ArticleList: React.FC<ArticleListProps> = ({ articles, loading, error, onS
   );
 };
 
-export default ArticleList; 
+export default ArticleList;

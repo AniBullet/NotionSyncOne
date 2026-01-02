@@ -3,6 +3,7 @@ import { join } from 'path';
 import { ConfigService } from './services/ConfigService';
 import { NotionService } from './services/NotionService';
 import { WeChatService } from './services/WeChatService';
+import { WordPressService } from './services/WordPressService';
 import { SyncService } from './services/SyncService';
 import { setupIpcHandlers } from './ipc/handlers';
 
@@ -28,6 +29,7 @@ let mainWindow: BrowserWindow | null = null;
 let configService: ConfigService | null = null;
 let notionService: NotionService | null = null;
 let weChatService: WeChatService | null = null;
+let wordPressService: WordPressService | null = null;
 let syncService: SyncService | null = null;
 
 // 初始化服务
@@ -37,16 +39,27 @@ async function initServices() {
     configService = new ConfigService();
     await configService.init(); // 确保配置已加载
     const notionConfig = configService.getNotionConfig();
+    const wpConfig = configService.getWordPressConfig();
     
     // ⚠️ 安全：不记录包含API key的配置信息
     console.log('配置加载状态: apiKey已配置:', !!notionConfig.apiKey, ', databaseId已配置:', !!notionConfig.databaseId);
+    console.log('WordPress 配置状态: siteUrl已配置:', !!wpConfig?.siteUrl, ', username已配置:', !!wpConfig?.username);
     
     // 初始化 Notion 服务
     if (notionConfig.apiKey && notionConfig.databaseId) {
       try {
         notionService = new NotionService(notionConfig);
         weChatService = new WeChatService(configService);
-        syncService = new SyncService(notionService, weChatService, configService);
+        
+        // 初始化 WordPress 服务（如果配置了）
+        if (wpConfig?.siteUrl && wpConfig?.username && wpConfig?.appPassword) {
+          wordPressService = new WordPressService(configService);
+          console.log('WordPress 服务初始化成功');
+        } else {
+          console.log('WordPress 配置未完成，服务未初始化');
+        }
+        
+        syncService = new SyncService(notionService, weChatService, configService, wordPressService);
         console.log('服务初始化成功');
       } catch (error) {
         console.error('服务初始化失败:', error);
@@ -75,7 +88,7 @@ async function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
-      title: 'NotionSyncWechat',
+      title: 'NotionSyncOne',
       icon: iconPath,
       webPreferences: {
         nodeIntegration: false,
@@ -148,7 +161,7 @@ ipcMain.handle('open-external-url', async (_event, url: string) => {
 app.whenReady().then(async () => {
   // ⚠️ 关键：Windows 任务栏图标和名称设置（必须在这里设置）
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.notionsyncwechat.NotionSyncWechat');
+    app.setAppUserModelId('com.notionsyncone.NotionSyncOne');
   }
   
   console.log('应用准备就绪，初始化服务...');
@@ -156,7 +169,7 @@ app.whenReady().then(async () => {
   
   // 设置 IPC 处理器
   if (configService) {
-    setupIpcHandlers(configService, notionService, weChatService, syncService);
+    setupIpcHandlers(configService, notionService, weChatService, syncService, wordPressService);
     
     // 检查并重置卡住的同步状态
     if (syncService) {

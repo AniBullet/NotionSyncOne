@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { NotionConfig } from '../../shared/types/notion';
 import { WeChatConfig } from '../../shared/types/wechat';
+import { WordPressConfig } from '../../shared/types/wordpress';
 import { Config } from '../../shared/types/config';
 
 interface ConfigPanelProps {
@@ -12,9 +13,11 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
   const [config, setConfig] = useState<Config>({
     notion: { apiKey: '', databaseId: '' },
     wechat: { appId: '', appSecret: '' },
+    wordpress: { siteUrl: '', username: '', appPassword: '' },
   });
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
+  const [wpTestStatus, setWpTestStatus] = useState<{ testing: boolean; result?: { success: boolean; message: string } }>({ testing: false });
 
   useEffect(() => {
     loadConfig();
@@ -24,7 +27,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
     try {
       setLoading(true);
       const loadedConfig = await IpcService.getConfig();
-      // 确保配置对象包含所有字段，包括新添加的 author
+      // 确保配置对象包含所有字段，包括新添加的 author 和 WordPress 配置
       setConfig({
         notion: {
           apiKey: loadedConfig.notion?.apiKey || '',
@@ -35,6 +38,13 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
           appSecret: loadedConfig.wechat?.appSecret || '',
           author: loadedConfig.wechat?.author || '',
           topNotice: loadedConfig.wechat?.topNotice || ''
+        },
+        wordpress: {
+          siteUrl: loadedConfig.wordpress?.siteUrl || '',
+          username: loadedConfig.wordpress?.username || '',
+          appPassword: loadedConfig.wordpress?.appPassword || '',
+          defaultCategory: loadedConfig.wordpress?.defaultCategory,
+          defaultAuthor: loadedConfig.wordpress?.defaultAuthor
         }
       });
     } catch (err) {
@@ -51,7 +61,8 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
       setLoading(true);
       setSaveStatus({ type: null, message: '' });
       
-      console.log('当前配置对象:', JSON.stringify(config, null, 2));
+      // ⚠️ 安全：不记录包含敏感信息的完整配置
+      console.log('当前配置状态 - Notion:', !!config.notion?.apiKey, 'WeChat:', !!config.wechat?.appId, 'WordPress:', !!config.wordpress?.siteUrl);
       
       // 验证配置
       if (!config.notion.apiKey || !config.notion.databaseId) {
@@ -61,7 +72,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
       }
       
       // 确保发送完整的配置对象
-      const configToSave = {
+      const configToSave: Config = {
         notion: {
           apiKey: config.notion.apiKey.trim(),
           databaseId: config.notion.databaseId.trim()
@@ -71,10 +82,19 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
           appSecret: (config.wechat?.appSecret || '').trim(),
           author: (config.wechat?.author || '').trim() || undefined,
           topNotice: (config.wechat?.topNotice || '').trim() || undefined
-        }
+        },
+        // WordPress 配置（可选）
+        wordpress: config.wordpress?.siteUrl ? {
+          siteUrl: (config.wordpress.siteUrl || '').trim(),
+          username: (config.wordpress.username || '').trim(),
+          appPassword: (config.wordpress.appPassword || '').trim(),
+          defaultCategory: config.wordpress.defaultCategory,
+          defaultAuthor: config.wordpress.defaultAuthor
+        } : undefined
       };
       
-      console.log('处理后的配置对象:', JSON.stringify(configToSave, null, 2));
+      // ⚠️ 安全：不记录包含敏感信息的完整配置
+      console.log('处理后配置状态 - Notion:', !!configToSave.notion?.apiKey, 'WeChat:', !!configToSave.wechat?.appId, 'WordPress:', !!configToSave.wordpress?.siteUrl);
       console.log('正在调用 IpcService.saveConfig...');
       const result = await IpcService.saveConfig(configToSave);
       console.log('保存配置结果:', result);
@@ -103,10 +123,27 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
     setConfig(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section] || {}),
         [field]: value
       }
     }));
+  };
+
+  // 测试 WordPress 连接
+  const handleTestWordPress = async () => {
+    try {
+      setWpTestStatus({ testing: true });
+      const result = await IpcService.testWordPressConnection();
+      setWpTestStatus({ testing: false, result });
+    } catch (error) {
+      setWpTestStatus({ 
+        testing: false, 
+        result: { 
+          success: false, 
+          message: error instanceof Error ? error.message : '测试连接失败' 
+        } 
+      });
+    }
   };
 
   if (loading) {
@@ -222,7 +259,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
             value={config.wechat.topNotice || ''}
             onChange={e => handleChange('wechat', 'topNotice', e.target.value)}
             className="input"
-            placeholder="例如：本文章由 NotionSyncWechat 自动同步"
+            placeholder="例如：本文章由 NotionSyncOne 自动同步"
           />
           <p style={{ marginTop: 'var(--spacing-xs)', fontSize: '12px', color: 'var(--text-tertiary)' }}>
             留空则不显示提示语
@@ -230,6 +267,83 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ onConfigSaved }) => {
         </div>
       </div>
 
+      {/* WordPress 配置卡片 */}
+      <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
+        <h2 style={{ 
+          fontSize: '18px', 
+          fontWeight: '600', 
+          marginBottom: 'var(--spacing-md)',
+          color: 'var(--text-primary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--spacing-sm)'
+        }}>
+          <span style={{ fontSize: '20px' }}>📝</span>
+          WordPress 配置（可选）
+        </h2>
+        <p style={{ marginBottom: 'var(--spacing-md)', fontSize: '13px', color: 'var(--text-tertiary)' }}>
+          配置 WordPress 后可以将 Notion 文章同步到 WordPress 站点。需要 WordPress 5.6+ 版本并启用应用密码。
+        </p>
+        <div style={{ marginBottom: 'var(--spacing-md)' }}>
+          <label className="label">站点 URL</label>
+          <input
+            type="text"
+            value={config.wordpress?.siteUrl || ''}
+            onChange={e => handleChange('wordpress', 'siteUrl', e.target.value)}
+            className="input"
+            placeholder="例如: https://your-site.com"
+          />
+          <p style={{ marginTop: 'var(--spacing-xs)', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+            WordPress 站点的完整 URL，不需要加 /wp-json
+          </p>
+        </div>
+        <div style={{ marginBottom: 'var(--spacing-md)' }}>
+          <label className="label">用户名</label>
+          <input
+            type="text"
+            value={config.wordpress?.username || ''}
+            onChange={e => handleChange('wordpress', 'username', e.target.value)}
+            className="input"
+            placeholder="WordPress 登录用户名"
+          />
+        </div>
+        <div style={{ marginBottom: 'var(--spacing-md)' }}>
+          <label className="label">应用密码</label>
+          <input
+            type="password"
+            value={config.wordpress?.appPassword || ''}
+            onChange={e => handleChange('wordpress', 'appPassword', e.target.value)}
+            className="input"
+            placeholder="WordPress 应用密码（非登录密码）"
+          />
+          <p style={{ marginTop: 'var(--spacing-xs)', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+            在 WordPress 后台 → 用户 → 个人资料 → 应用密码 中生成
+          </p>
+        </div>
+        
+        {/* 测试连接按钮 */}
+        <div style={{ marginTop: 'var(--spacing-md)' }}>
+          <button
+            onClick={handleTestWordPress}
+            className="btn btn-secondary"
+            disabled={wpTestStatus.testing || !config.wordpress?.siteUrl || !config.wordpress?.username || !config.wordpress?.appPassword}
+            style={{ marginRight: 'var(--spacing-sm)' }}
+          >
+            {wpTestStatus.testing ? '⏳ 测试中...' : '🔗 测试连接'}
+          </button>
+          
+          {wpTestStatus.result && (
+            <span style={{ 
+              marginLeft: 'var(--spacing-sm)',
+              color: wpTestStatus.result.success ? 'var(--success-color)' : 'var(--error-color)',
+              fontSize: '14px'
+            }}>
+              {wpTestStatus.result.success ? '✅ ' : '❌ '}
+              {wpTestStatus.result.message}
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* 保存按钮 */}
       <div style={{ textAlign: 'right' }}>

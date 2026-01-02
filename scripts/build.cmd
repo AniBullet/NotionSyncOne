@@ -1,6 +1,6 @@
 @echo off
-REM 切换到脚本所在目录（修复管理员运行时的路径问题）
-cd /d "%~dp0"
+REM 切换到项目根目录
+cd /d "%~dp0\.."
 
 REM 检测管理员权限（静默检测，不自动提升）
 REM 如需管理员权限，请手动右键"以管理员身份运行"
@@ -8,7 +8,7 @@ REM 如需管理员权限，请手动右键"以管理员身份运行"
 chcp 65001 > nul
 echo.
 echo =====================================
-echo   NotionSyncWechat 打包构建
+echo   NotionSyncOne 打包构建
 echo =====================================
 echo.
 
@@ -90,7 +90,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   安装程序位于: dist\
     dir dist\*.exe /b 2>nul
     echo.
-    echo   推荐分享: NotionSyncWechat-1.0.0-portable.exe
+    echo   推荐分享: NotionSyncOne-1.0.0-portable.exe
 ) else (
     echo   ✗ 打包失败
 )

@@ -1,4 +1,4 @@
-# 📦 NotionSyncWechat 部署指南
+# 📦 NotionSyncOne 部署指南
 
 ## 🚀 方式一：源码部署（开发/调试）
 
@@ -22,7 +22,7 @@ npm install -g pnpm
 ```
 
 #### 3. 复制项目文件
-复制整个 `NotionSyncWechat` 文件夹到目标电脑
+复制整个 `NotionSyncOne` 文件夹到目标电脑
 
 可以删除以下文件夹减小体积：
 - `node_modules/` （会重新安装）
@@ -30,23 +30,26 @@ npm install -g pnpm
 - `dist/` （会重新构建）
 
 #### 4. 安装依赖
-双击 `start.cmd` 或在项目目录运行：
+在项目目录运行：
 ```bash
 pnpm install
 ```
 
 #### 5. 启动应用
-双击 `start.cmd` 或运行：
 ```bash
-.\start.cmd
+# Windows 用户
+.\scripts\dev.cmd
+
+# 或手动启动
+pnpm dev
 ```
 
 #### 6. 配置
 在应用界面中输入：
 - Notion API Key
 - Notion Database ID
-- 微信公众号 AppID
-- 微信公众号 AppSecret
+- 微信公众号 AppID 和 AppSecret（可选）
+- WordPress 站点 URL、用户名、应用密码（可选）
 
 ---
 
@@ -56,7 +59,7 @@ pnpm install
 
 在源码电脑上运行：
 ```bash
-.\build.cmd
+.\scripts\build.cmd
 ```
 
 或手动运行：
@@ -67,11 +70,12 @@ pnpm build
 ### 安装程序位置
 打包完成后，安装程序位于：
 ```
-dist\Notion to WeChat Sync Setup X.X.X.exe
+dist\NotionSyncOne-X.X.X.exe
+dist\NotionSyncOne-X.X.X-portable.exe  # 便携版（推荐）
 ```
 
 ### 分发
-将 `.exe` 文件复制到目标电脑，双击安装即可。
+将 `.exe` 文件复制到目标电脑，双击安装或运行即可。
 
 **优点：**
 - ✅ 无需安装 Node.js
@@ -87,12 +91,11 @@ dist\Notion to WeChat Sync Setup X.X.X.exe
 
 **Windows:**
 ```
-C:\Users\你的用户名\AppData\Roaming\notion2wechat\config\
+C:\Users\你的用户名\AppData\Roaming\notionsyncone\config\
 ```
 
 ### 包含的配置文件
-- `notion-config.json` - Notion API 配置
-- `wechat-config.json` - 微信公众号配置
+- `config.json` - 所有配置信息
 - `sync-states.json` - 同步状态记录
 
 ### 迁移步骤
@@ -120,10 +123,10 @@ C:\Users\你的用户名\AppData\Roaming\notion2wechat\config\
 **A:** 
 1. 删除 `node_modules` 重新安装：`pnpm install`
 2. 清理构建文件：删除 `out/` 和 `dist/`
-3. 重新运行 `.\build.cmd`
+3. 重新运行 `.\scripts\build.cmd`
 
 ### Q: 端口 5173 被占用？
-**A:** `start.cmd` 会自动停止占用端口的进程，如果还有问题：
+**A:** 
 ```bash
 # 手动查找并停止
 netstat -ano | findstr :5173
@@ -141,8 +144,8 @@ taskkill /F /PID <进程ID>
 ## 📞 技术支持
 
 遇到问题？
-1. 查看 [README.md](README.md) 了解基本使用
-2. 查看 [QUICK_START.md](docs/QUICK_START.md) 了解快速开始
+1. 查看 [README.md](../README.md) 了解基本使用
+2. 查看 [QUICK_START.md](./QUICK_START.md) 了解快速开始
 3. 检查终端日志中的错误信息
 
 ---
@@ -156,5 +159,4 @@ taskkill /F /PID <进程ID>
 
 ---
 
-*最后更新: 2025-12-01*
-
+*最后更新: 2025-01-02*

@@ -4,6 +4,7 @@ import { join, dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { NotionConfig } from '../../shared/types/notion';
 import { WeChatConfig } from '../../shared/types/wechat';
+import { WordPressConfig } from '../../shared/types/wordpress';
 import { Config } from '../../shared/types/config';
 import { logger } from '../utils/logger';
 
@@ -70,7 +71,15 @@ export class ConfigService {
           // 保留已有的 token 信息
           accessToken: loadedConfig.wechat?.accessToken,
           tokenExpiresAt: loadedConfig.wechat?.tokenExpiresAt,
-        }
+        },
+        // WordPress 配置（可选）
+        wordpress: loadedConfig.wordpress ? {
+          siteUrl: loadedConfig.wordpress.siteUrl || '',
+          username: loadedConfig.wordpress.username || '',
+          appPassword: loadedConfig.wordpress.appPassword || '',
+          defaultCategory: loadedConfig.wordpress.defaultCategory,
+          defaultAuthor: loadedConfig.wordpress.defaultAuthor,
+        } : undefined,
       };
       return this.config;
     } catch (error) {
@@ -98,7 +107,12 @@ export class ConfigService {
           // 确保保留 token 信息
           accessToken: this.config.wechat?.accessToken || newConfig.wechat?.accessToken,
           tokenExpiresAt: this.config.wechat?.tokenExpiresAt || newConfig.wechat?.tokenExpiresAt,
-        }
+        },
+        // WordPress 配置（可选）
+        wordpress: newConfig.wordpress ? {
+          ...this.config.wordpress,
+          ...newConfig.wordpress,
+        } : this.config.wordpress,
       };
       
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
@@ -138,8 +152,8 @@ export class ConfigService {
     return this.config.wechat;
   }
 
-  getSyncConfig(): SyncConfig {
-    return this.config.sync;
+  getWordPressConfig(): WordPressConfig | undefined {
+    return this.config.wordpress;
   }
 
   // 格式化数据库 ID

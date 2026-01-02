@@ -1,11 +1,11 @@
 @echo off
 REM 依赖安全漏洞检查
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 chcp 65001 > nul
 echo.
 echo =====================================
-echo   依赖安全检查
+echo   NotionSyncOne 依赖安全检查
 echo   Security Vulnerability Check
 echo =====================================
 echo.
@@ -46,4 +46,3 @@ echo        npm audit --json
 echo =====================================
 echo.
 pause
-

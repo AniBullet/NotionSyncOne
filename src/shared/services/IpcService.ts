@@ -3,6 +3,7 @@ import { NotionPage } from '../types/notion';
 import { SyncState } from '../types/sync';
 import { Config } from '../types/config';
 import { NotionConfig } from '../types/notion';
+import { WordPressCategory, WordPressTag } from '../types/wordpress';
 
 export class IpcService {
   /**
@@ -150,5 +151,53 @@ export class IpcService {
       console.error('发送通知失败:', error);
       throw error;
     }
+  }
+
+  // ==================== WordPress 相关方法 ====================
+
+  /**
+   * 测试 WordPress 连接
+   */
+  static async testWordPressConnection(): Promise<{ success: boolean; message: string; user?: any }> {
+    return window.electron.ipcRenderer.invoke('test-wordpress-connection');
+  }
+
+  /**
+   * 同步文章到 WordPress
+   */
+  static async syncToWordPress(articleId: string, status: 'publish' | 'draft' = 'draft'): Promise<SyncState> {
+    return window.electron.ipcRenderer.invoke('sync-to-wordpress', articleId, status);
+  }
+
+  /**
+   * 同时同步到微信和 WordPress
+   */
+  static async syncToBoth(
+    articleId: string, 
+    wechatMode: 'publish' | 'draft' = 'draft',
+    wpStatus: 'publish' | 'draft' = 'draft'
+  ): Promise<{ wechat: SyncState; wordpress: SyncState }> {
+    return window.electron.ipcRenderer.invoke('sync-to-both', articleId, wechatMode, wpStatus);
+  }
+
+  /**
+   * 获取 WordPress 分类列表
+   */
+  static async getWordPressCategories(): Promise<WordPressCategory[]> {
+    return window.electron.ipcRenderer.invoke('get-wp-categories');
+  }
+
+  /**
+   * 获取 WordPress 标签列表
+   */
+  static async getWordPressTags(): Promise<WordPressTag[]> {
+    return window.electron.ipcRenderer.invoke('get-wp-tags');
+  }
+
+  /**
+   * 获取 WordPress 同步状态
+   */
+  static async getWordPressSyncStatus(articleId: string): Promise<SyncState> {
+    return window.electron.ipcRenderer.invoke('get-wp-sync-status', articleId);
   }
 } 

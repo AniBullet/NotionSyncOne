@@ -25,7 +25,7 @@ const MainLayout: React.FC = () => {
             <div className="flex items-center gap-3">
               <img 
                 src={iconUrl} 
-                alt="NotionSyncWechat"
+                alt="NotionSyncOne"
                 style={{
                   width: '36px',
                   height: '36px',
@@ -39,7 +39,7 @@ const MainLayout: React.FC = () => {
                 color: 'var(--text-primary)',
                 letterSpacing: '-0.5px'
               }}>
-                NotionSyncWechat
+                NotionSyncOne
               </h1>
         </div>
             

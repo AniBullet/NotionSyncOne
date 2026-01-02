@@ -7,8 +7,8 @@
 本项目实施了以下安全措施来保护您的敏感信息：
 
 1. **本地存储加密配置**
-   - 所有 API 密钥（Notion API Key、WeChat AppID/AppSecret）存储在本地配置文件中
-   - 配置文件路径：`%APPDATA%/notionsyncwechat/config/config.json`
+   - 所有 API 密钥（Notion API Key、WeChat AppID/AppSecret、WordPress 应用密码）存储在本地配置文件中
+   - 配置文件路径：`%APPDATA%/notionsyncone/config/config.json`
    - 该目录已被 `.gitignore` 排除，不会被提交到代码仓库
 
 2. **日志安全（已优化）**
@@ -18,7 +18,7 @@
    - ✅ 使用环境变量控制：开发模式显示详细日志，生产模式最小化输出
 
 3. **网络请求**
-   - API 密钥仅用于与官方 API 通信（Notion API、WeChat API）
+   - API 密钥仅用于与官方 API 通信（Notion API、WeChat API、WordPress REST API）
    - 不会将密钥发送到任何第三方服务器
    - 所有网络请求使用 HTTPS 加密传输
 
@@ -26,11 +26,12 @@
 
 1. **定期更换密钥**
    - 建议定期更换 API 密钥以增强安全性
-   - 在 Notion 和微信公众平台的设置中可以重新生成密钥
+   - 在 Notion、微信公众平台和 WordPress 的设置中可以重新生成密钥
 
 2. **限制权限**
    - Notion Integration 仅授权访问必要的数据库
    - 微信公众号 API 权限设置为最小必需权限
+   - WordPress 应用密码仅授予必要的权限
 
 3. **保护配置文件**
    - 不要将配置文件分享给他人
@@ -41,12 +42,16 @@
 
 如果您发现任何安全漏洞，请通过以下方式联系：
 
-- GitHub Issues: [https://github.com/AniBullet/notionsyncwechat/issues](https://github.com/AniBullet/notionsyncwechat/issues)
+- GitHub Issues: [https://github.com/AniBullet/NotionSyncOne/issues](https://github.com/AniBullet/NotionSyncOne/issues)
 - 请在问题标题中标注 `[Security]` 前缀
 
 我们会尽快响应并修复安全问题。
 
 ## 更新日志
+
+### 2025-01-02
+- ✅ 添加 WordPress REST API 支持
+- ✅ 更新配置路径说明
 
 ### 2025-12-01
 - ✅ 移除所有可能泄露 API 密钥的日志输出

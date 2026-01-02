@@ -93,8 +93,27 @@ async function createWindow() {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: join(__dirname, '../preload/index.js')
+        preload: join(__dirname, '../preload/index.js'),
+        // 允许加载外部图片（Notion 封面图等）
+        webSecurity: true
       }
+    });
+    
+    // 设置 CSP 允许加载外部图片
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+            "img-src 'self' data: blob: https: http:; " +
+            "media-src 'self' data: blob: https: http:; " +
+            "connect-src 'self' https: http: ws: wss:; " +
+            "font-src 'self' data: https:; " +
+            "style-src 'self' 'unsafe-inline' https:;"
+          ]
+        }
+      });
     });
     
     // Windows 特定设置：为任务栏设置图标

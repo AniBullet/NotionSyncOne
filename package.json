@@ -1,7 +1,7 @@
 {
   "name": "notionsyncone",
   "version": "1.0.0",
-  "description": "NotionSyncOne - 将 Notion 文章同步到多个平台（微信公众号、WordPress）",
+  "description": "Notion 文章多平台同步工具",
   "main": "out/main/index.js",
   "author": "Bullet.S",
   "repository": {
@@ -71,7 +71,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "differentialPackage": true
+      "differentialPackage": false,
+      "allowElevation": true
     },
     "portable": {
       "artifactName": "NotionSyncOne-${version}-portable.exe"

@@ -4,6 +4,7 @@ export interface WordPressConfig {
   appPassword: string;    // 应用密码 (WordPress 5.6+)
   defaultCategory?: number;  // 默认分类 ID
   defaultAuthor?: number;    // 默认作者 ID
+  topNotice?: string;        // 顶部提示语
 }
 
 export interface WordPressArticle {

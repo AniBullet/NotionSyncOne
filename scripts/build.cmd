@@ -90,7 +90,7 @@ if %ERRORLEVEL% EQU 0 (
     echo   安装程序位于: dist\
     dir dist\*.exe /b 2>nul
     echo.
-    echo   推荐分享: NotionSyncOne-1.0.0-portable.exe
+    echo   推荐分享: portable 版本（无需安装）
 ) else (
     echo   ✗ 打包失败
 )

@@ -1230,6 +1230,9 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     imageUrlMap?: Map<string, string>,
     featuredMediaId?: number
   ): WordPressArticle {
+    // 获取 WordPress 配置
+    const wpConfig = this.configService.getWordPressConfig();
+    
     // 构建文章内容 HTML
     let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap);
 
@@ -1238,10 +1241,28 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
     const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
 
+    // 构建文章头部（顶部提示语 + 文章信息）
+    let articleHeader = '';
+    
+    // 如果有 WordPress 顶部提示语配置，添加到文章顶部
+    if (wpConfig?.topNotice && wpConfig.topNotice.trim()) {
+      const topNoticeHtml = this.createWordPressTopNotice(wpConfig.topNotice.trim());
+      articleHeader = topNoticeHtml;
+    }
+
     // 创建文章信息头部（简化版，WordPress 通常不需要太多内联样式）
     const articleInfoHtml = this.createWordPressArticleInfo(page, linkStart, from, author);
     if (articleInfoHtml) {
-      articleContent = articleInfoHtml + '\n\n' + articleContent;
+      if (articleHeader) {
+        articleHeader = articleHeader + '\n\n' + articleInfoHtml;
+      } else {
+        articleHeader = articleInfoHtml;
+      }
+    }
+    
+    // 合并头部和正文
+    if (articleHeader) {
+      articleContent = articleHeader + '\n\n' + articleContent;
     }
 
     // 获取摘要
@@ -1274,7 +1295,20 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
   }
 
   /**
-   * 创建 WordPress 文章信息头部
+   * 创建 WordPress 顶部提示语 HTML
+   */
+  private createWordPressTopNotice(noticeText: string): string {
+    // 处理换行：将换行符转换为 <br>
+    const processedText = this.escapeHtml(noticeText).replace(/\n/g, '<br>');
+    
+    // 使用 WordPress 友好的样式
+    return `<div class="top-notice" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 15px 20px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; text-align: center; box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);">
+  <p style="margin: 0; line-height: 1.6;">${processedText}</p>
+</div>`;
+  }
+
+  /**
+   * 创建 WordPress 文章信息头部（与微信保持一致的完整信息）
    */
   private createWordPressArticleInfo(
     page: NotionPage,
@@ -1282,19 +1316,55 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     from: string,
     author: string
   ): string {
-    const infoItems: string[] = [];
+    const infoRows: string[] = [];
 
+    // 标题
+    if (page.title) {
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">标题</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(page.title)}</td></tr>`);
+    }
+
+    // 链接
     if (linkStart) {
-      infoItems.push(`<strong>原文链接:</strong> <a href="${linkStart}" target="_blank">${linkStart}</a>`);
-    }
-    if (from) {
-      infoItems.push(`<strong>来源:</strong> ${this.escapeHtml(from)}`);
-    }
-    if (author) {
-      infoItems.push(`<strong>作者:</strong> ${this.escapeHtml(author)}`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">链接</td><td style="padding: 6px 10px;"><a href="${linkStart}" target="_blank" style="color: #0073aa; text-decoration: none;">${this.escapeHtml(linkStart)}</a></td></tr>`);
     }
 
-    // AddedTime
+    // 来源
+    if (from) {
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">来源</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
+    }
+
+    // 作者
+    if (author) {
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">作者</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
+    }
+
+    // FeatureTag - 标签特色
+    const featureTag = page.properties.FeatureTag;
+    if (featureTag) {
+      let tagValue = '';
+      if (featureTag.type === 'select' && featureTag.select) {
+        tagValue = featureTag.select.name;
+      } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
+        tagValue = featureTag.multi_select.map((tag: any) => tag.name).join(', ');
+      }
+      if (tagValue) {
+        infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">标签特色</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(tagValue)}</td></tr>`);
+      }
+    }
+
+    // ExpectationsRate - 个人期望
+    const expectationsRate = page.properties.ExpectationsRate?.number;
+    if (expectationsRate !== undefined && expectationsRate !== null) {
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">个人期望</td><td style="padding: 6px 10px; color: #333;">${expectationsRate}/10</td></tr>`);
+    }
+
+    // Engine - 使用引擎
+    const engine = page.properties.Engine?.select?.name || '';
+    if (engine) {
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">使用引擎</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(engine)}</td></tr>`);
+    }
+
+    // AddedTime - 添加日期
     const addedTimeProperty = page.properties.AddedTime;
     let addedTime = '';
     if (addedTimeProperty) {
@@ -1310,16 +1380,20 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     if (addedTime) {
       const date = new Date(addedTime);
       const formattedDate = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-      infoItems.push(`<strong>添加日期:</strong> ${formattedDate}`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">添加日期</td><td style="padding: 6px 10px; color: #333;">${formattedDate}</td></tr>`);
     }
 
-    if (infoItems.length === 0) {
+    if (infoRows.length === 0) {
       return '';
     }
 
-    // 使用简洁的 WordPress 兼容格式
-    return `<div class="article-meta" style="background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-left: 4px solid #0073aa; border-radius: 4px;">
-${infoItems.map(item => `<p style="margin: 5px 0;">${item}</p>`).join('\n')}
+    // 使用表格格式，与微信保持一致的风格
+    return `<div class="article-meta" style="margin: 0 0 20px 0; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #0073aa; border-radius: 4px;">
+  <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.6;">
+    <tbody>
+      ${infoRows.join('\n      ')}
+    </tbody>
+  </table>
 </div>`;
   }
 } 

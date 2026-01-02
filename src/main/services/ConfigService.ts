@@ -79,6 +79,7 @@ export class ConfigService {
           appPassword: loadedConfig.wordpress.appPassword || '',
           defaultCategory: loadedConfig.wordpress.defaultCategory,
           defaultAuthor: loadedConfig.wordpress.defaultAuthor,
+          topNotice: loadedConfig.wordpress.topNotice,
         } : undefined,
       };
       return this.config;

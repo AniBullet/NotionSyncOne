@@ -18,6 +18,8 @@ declare global {
       openNotionPage(url: string): Promise<void>;
       openExternal(url: string): Promise<void>;
       showNotification(title: string, body: string): Promise<void>;
+      testWechatConnection(appId: string, appSecret: string): Promise<void>;
+      testWordPressConnection(siteUrl: string, username: string, appPassword: string): Promise<void>;
     }
   }
 }

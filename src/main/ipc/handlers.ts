@@ -84,7 +84,8 @@ export function setupIpcHandlers(
           username: config.wordpress.username,
           appPassword: config.wordpress.appPassword,
           defaultCategory: config.wordpress.defaultCategory,
-          defaultAuthor: config.wordpress.defaultAuthor
+          defaultAuthor: config.wordpress.defaultAuthor,
+          topNotice: config.wordpress.topNotice
         } : undefined
       };
       
@@ -250,14 +251,60 @@ export function setupIpcHandlers(
     return true;
   });
 
-  // ==================== WordPress 相关 ====================
+  // ==================== 测试连接 ====================
+
+  // 测试微信连接
+  ipcMain.handle('test-wechat-connection', async (event, appId: string, appSecret: string) => {
+    try {
+      const url = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${appId}&secret=${appSecret}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.errcode) {
+        throw new Error(`微信错误 ${data.errcode}: ${data.errmsg}`);
+      }
+      
+      if (!data.access_token) {
+        throw new Error('未能获取 access_token');
+      }
+      
+      return { success: true, message: '连接成功' };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('连接失败');
+    }
+  });
 
   // 测试 WordPress 连接
-  ipcMain.handle('test-wordpress-connection', async () => {
-    if (!wordPressService) {
-      return { success: false, message: 'WordPress 服务未初始化，请先配置 WordPress 信息' };
+  ipcMain.handle('test-wordpress-connection', async (event, siteUrl: string, username: string, appPassword: string) => {
+    try {
+      // 清理 URL
+      const cleanUrl = siteUrl.replace(/\/+$/, '');
+      const apiUrl = `${cleanUrl}/wp-json/wp/v2/users/me`;
+      
+      const auth = Buffer.from(`${username}:${appPassword}`).toString('base64');
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('认证失败，请检查用户名和应用密码');
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (!data.id) {
+        throw new Error('无法验证用户身份');
+      }
+      
+      return { success: true, message: `连接成功，用户: ${data.name || data.slug}` };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('连接失败');
     }
-    return wordPressService.testConnection();
   });
 
   // 同步文章到 WordPress

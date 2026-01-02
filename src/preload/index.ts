@@ -52,5 +52,9 @@ contextBridge.exposeInMainWorld('electron', {
   showNotification: (title, body) => ipcRenderer.invoke('show-notification', { title, body }),
   onSyncStateChanged: (callback) => {
     ipcRenderer.on('syncStateChanged', (_, state) => callback(state));
-  }
+  },
+  
+  // 测试连接
+  testWechatConnection: (appId: string, appSecret: string) => ipcRenderer.invoke('test-wechat-connection', appId, appSecret),
+  testWordPressConnection: (siteUrl: string, username: string, appPassword: string) => ipcRenderer.invoke('test-wordpress-connection', siteUrl, username, appPassword)
 }); 

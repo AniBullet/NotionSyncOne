@@ -159,7 +159,10 @@ export class WordPressService {
         throw new Error('同步已取消');
       }
 
-      const response = await this.client.post<WordPressPost>('/posts', postData);
+      const response = await this.client.post<WordPressPost>('/posts', postData, {
+        signal: abortSignal,
+        timeout: 120000, // 2 分钟超时
+      });
 
       if (response.data && response.data.id) {
         LogService.success(`========== 文章发布成功 ==========`, 'WordPressService');
@@ -231,7 +234,8 @@ export class WordPressService {
             'Content-Type': contentType,
             'Content-Disposition': `attachment; filename="${finalFilename}"`,
           },
-          timeout: 60000, // 图片上传可能需要更长时间
+          timeout: 120000, // 图片上传可能需要更长时间
+          signal: abortSignal,
         }
       );
 
@@ -370,10 +374,16 @@ export class WordPressService {
    */
   private async downloadImage(imageUrl: string, abortSignal?: AbortSignal): Promise<Buffer> {
     try {
+      // 检查是否已取消
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
+      
       // 使用 axios 下载图片
       const response = await axios.get(imageUrl, {
         responseType: 'arraybuffer',
-        timeout: 30000,
+        timeout: 60000,
+        signal: abortSignal,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': 'image/*,*/*;q=0.8',
@@ -382,13 +392,19 @@ export class WordPressService {
 
       return Buffer.from(response.data);
     } catch (error: any) {
+      // 如果是取消错误，直接抛出
+      if (abortSignal?.aborted || error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+        throw new Error('同步已取消');
+      }
+      
       // 如果直接下载失败，尝试使用代理
       LogService.warn('直接下载失败，尝试使用代理...', 'WordPressService');
       
       const proxiedUrl = `https://www.notion.so/image/${encodeURIComponent(imageUrl)}`;
       const response = await axios.get(proxiedUrl, {
         responseType: 'arraybuffer',
-        timeout: 30000,
+        timeout: 60000,
+        signal: abortSignal,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },

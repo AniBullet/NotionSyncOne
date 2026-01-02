@@ -290,10 +290,12 @@ export class SyncService {
     const abortController = new AbortController();
     this.activeSyncControllers.set(articleId, abortController);
 
-    // 添加超时机制（默认 5 分钟，这里放宽到 15 分钟，适配图片较多的文章）
-    const timeout = 15 * 60 * 1000; // 15 分钟
+    // 添加超时机制（5分钟）
+    const timeout = 5 * 60 * 1000; // 5 分钟
+    let timeoutId: NodeJS.Timeout;
     const timeoutPromise = new Promise<SyncState>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
+        LogService.warn(`微信同步超时，正在取消...`, 'SyncService');
         abortController.abort(); // 超时时也触发取消
         reject(new Error('同步超时：操作时间超过5分钟，请检查网络连接或重试'));
       }, timeout);
@@ -304,11 +306,13 @@ export class SyncService {
     try {
       // 使用 Promise.race 实现超时
       const result = await Promise.race([syncPromise, timeoutPromise]);
-      // 同步完成，清理 controller
+      // 同步完成，清理定时器和 controller
+      clearTimeout(timeoutId!);
       this.activeSyncControllers.delete(articleId);
       return result;
     } catch (error) {
-      // 清理 controller
+      // 清理定时器和 controller
+      clearTimeout(timeoutId!);
       this.activeSyncControllers.delete(articleId);
       
       // 如果是取消或超时错误，确保状态被更新为失败
@@ -1064,12 +1068,14 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     const abortController = new AbortController();
     this.activeSyncControllers.set(wpSyncKey, abortController);
 
-    // 添加超时机制
-    const timeout = 10 * 60 * 1000; // 10 分钟
+    // 添加超时机制（5分钟）
+    const timeout = 5 * 60 * 1000; // 5 分钟
+    let timeoutId: NodeJS.Timeout;
     const timeoutPromise = new Promise<SyncState>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
+        LogService.warn(`WordPress 同步超时，正在取消...`, 'SyncService');
         abortController.abort();
-        reject(new Error('WordPress 同步超时'));
+        reject(new Error('WordPress 同步超时：操作时间超过5分钟'));
       }, timeout);
     });
 
@@ -1077,12 +1083,15 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
 
     try {
       const result = await Promise.race([syncPromise, timeoutPromise]);
+      clearTimeout(timeoutId!);
       this.activeSyncControllers.delete(wpSyncKey);
       return result;
     } catch (error) {
+      clearTimeout(timeoutId!);
       this.activeSyncControllers.delete(wpSyncKey);
       if (error instanceof Error && (error.message.includes('超时') || error.message.includes('已取消'))) {
         const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, error.message);
+        LogService.error(`WordPress 同步失败: ${error.message}`, 'SyncService');
         return failedState;
       }
       throw error;
@@ -1140,56 +1149,31 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       const mainImage = this.getCoverImageUrl(page);
       LogService.log(`封面图片: ${mainImage || '未找到'}`, 'SyncService');
 
-      // 提取所有图片 URL 并上传到 WordPress
-      const imageUrls = this.extractImageUrls(blocks, mainImage);
-      LogService.log(`提取到 ${imageUrls.length} 张图片`, 'SyncService');
+      if (abortSignal?.aborted) {
+        throw new Error('同步已取消');
+      }
 
-      const imageUrlMap = new Map<string, string>();
+      // 只上传封面图作为 WordPress 特色图片，文章内容使用外部图片链接
       let featuredMediaId: number | undefined;
-
-      // 上传封面图片
-      if (mainImage) {
+      if (mainImage && this.wordPressService) {
         try {
           LogService.log('正在上传封面图片到 WordPress...', 'SyncService');
           const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
           featuredMediaId = coverMedia.id;
-          imageUrlMap.set(mainImage, coverMedia.source_url);
           LogService.success(`封面图片上传成功，media_id: ${coverMedia.id}`, 'SyncService');
         } catch (error) {
           LogService.warn(`封面图片上传失败: ${error instanceof Error ? error.message : String(error)}`, 'SyncService');
+          LogService.warn('文章将不设置特色图片', 'SyncService');
         }
-      }
-
-      // 上传文章中的其他图片
-      if (imageUrls.length > 0) {
-        LogService.log('========== 开始上传文章图片到 WordPress ==========', 'SyncService');
-        for (let i = 0; i < imageUrls.length; i++) {
-          if (abortSignal?.aborted) {
-            throw new Error('同步已取消');
-          }
-
-          const imageUrl = imageUrls[i];
-          if (imageUrlMap.has(imageUrl)) continue; // 跳过已上传的
-
-          try {
-            LogService.log(`[${i + 1}/${imageUrls.length}] 正在上传: ${imageUrl.substring(0, 50)}...`, 'SyncService');
-            const media = await this.wordPressService.uploadMedia(imageUrl, undefined, abortSignal);
-            imageUrlMap.set(imageUrl, media.source_url);
-            LogService.success(`✓ 上传成功`, 'SyncService');
-          } catch (error) {
-            LogService.error(`✗ 上传失败: ${error instanceof Error ? error.message : String(error)}`, 'SyncService');
-          }
-        }
-        LogService.success(`========== 图片上传完成: ${imageUrlMap.size}/${imageUrls.length + (mainImage ? 1 : 0)} 成功 ==========`, 'SyncService');
       }
 
       if (abortSignal?.aborted) {
         throw new Error('同步已取消');
       }
 
-      // 转换文章格式
+      // 转换文章格式（文章内图片直接使用外部 URL，不上传）
       LogService.log('正在转换文章格式...', 'SyncService');
-      const wpArticle = this.convertToWordPressArticle(page, blocks, status, imageUrlMap, featuredMediaId);
+      const wpArticle = this.convertToWordPressArticle(page, blocks, status, undefined, featuredMediaId);
       LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
 
       // 发布到 WordPress

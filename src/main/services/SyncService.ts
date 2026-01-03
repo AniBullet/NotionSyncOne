@@ -140,32 +140,45 @@ export class SyncService {
 
   // 获取封面图片 URL（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
   private getCoverImageUrl(page: NotionPage): string {
+    LogService.log(`[getCoverImageUrl] 开始查找封面图片...`, 'SyncService');
+    
     // 1. 优先使用页面的 cover 属性（Notion API 直接提供的封面）
     if (page.cover) {
-      LogService.log(`找到页面 cover 属性，类型: ${page.cover.type}`, 'SyncService');
+      LogService.log(`[getCoverImageUrl] 找到页面 cover 属性，类型: ${page.cover.type}`, 'SyncService');
       if (page.cover.type === 'external' && page.cover.external) {
         const url = page.cover.external.url;
-        LogService.log(`使用外部封面图片: ${url.substring(0, 50)}...`, 'SyncService');
+        LogService.log(`[getCoverImageUrl] ✓ 使用外部封面图片: ${url.substring(0, 80)}...`, 'SyncService');
         return url;
       } else if (page.cover.type === 'file' && page.cover.file) {
         const url = page.cover.file.url;
-        LogService.log(`使用文件封面图片: ${url.substring(0, 50)}...`, 'SyncService');
+        LogService.log(`[getCoverImageUrl] ✓ 使用 Notion 文件封面图片: ${url.substring(0, 80)}...`, 'SyncService');
+        // 提醒：Notion 文件 URL 有时效性
+        if (url.includes('secure.notion-static.com') || url.includes('s3.us-west')) {
+          LogService.warn(`[getCoverImageUrl] 注意：Notion 文件 URL 有时效性，可能会过期`, 'SyncService');
+        }
         return url;
+      } else {
+        LogService.warn(`[getCoverImageUrl] cover 类型不支持: ${page.cover.type}`, 'SyncService');
       }
     } else {
-      LogService.log('页面没有 cover 属性，查找自定义属性', 'SyncService');
+      LogService.log('[getCoverImageUrl] 页面没有 cover 属性，查找自定义属性...', 'SyncService');
     }
 
     // 2. 查找 Cover 属性（自定义属性）
     let coverProp = page.properties.Cover || page.properties['Cover'];
+    let propSource = 'Cover';
     if (!coverProp) {
       // 3. 如果没有 Cover，查找 MainImage
       coverProp = page.properties.MainImage || page.properties['Main Image'];
+      propSource = 'MainImage';
     }
     
     if (!coverProp) {
+      LogService.warn('[getCoverImageUrl] ✗ 未找到 Cover 或 MainImage 属性', 'SyncService');
       return '';
     }
+    
+    LogService.log(`[getCoverImageUrl] 找到 ${propSource} 属性，类型: ${coverProp.type}`, 'SyncService');
     
     // 处理不同类型的属性
     if (coverProp.type === 'files' && Array.isArray(coverProp.files)) {
@@ -173,19 +186,28 @@ export class SyncService {
       const firstFile = coverProp.files[0];
       if (firstFile) {
         if (firstFile.type === 'file' && firstFile.file) {
+          LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} files 属性获取封面`, 'SyncService');
           return firstFile.file.url;
         } else if (firstFile.type === 'external' && firstFile.external) {
+          LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} files(external) 属性获取封面`, 'SyncService');
           return firstFile.external.url;
         }
       }
+      LogService.warn(`[getCoverImageUrl] ${propSource} files 属性为空`, 'SyncService');
     } else if (coverProp.type === 'url') {
-      return coverProp.url || '';
+      if (coverProp.url) {
+        LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} url 属性获取封面`, 'SyncService');
+        return coverProp.url;
+      }
     } else if ((coverProp as any).url) {
+      LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} 直接 url 获取封面`, 'SyncService');
       return (coverProp as any).url;
     } else if (coverProp.rich_text?.[0]?.plain_text) {
+      LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} rich_text 获取封面 URL`, 'SyncService');
       return coverProp.rich_text[0].plain_text;
     }
     
+    LogService.warn(`[getCoverImageUrl] ✗ ${propSource} 属性存在但无法提取 URL`, 'SyncService');
     return '';
   }
 
@@ -1147,7 +1169,13 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
 
       // 获取封面图片
       const mainImage = this.getCoverImageUrl(page);
-      LogService.log(`封面图片: ${mainImage || '未找到'}`, 'SyncService');
+      LogService.log(`========== WordPress 封面图片处理 ==========`, 'SyncService');
+      if (mainImage) {
+        LogService.log(`找到封面图片 URL: ${mainImage.substring(0, 80)}...`, 'SyncService');
+      } else {
+        LogService.warn(`未找到封面图片！请检查 Notion 页面是否设置了封面（Cover）`, 'SyncService');
+        LogService.warn(`支持的封面来源：1. 页面封面 2. Cover 属性 3. MainImage 属性`, 'SyncService');
+      }
 
       if (abortSignal?.aborted) {
         throw new Error('同步已取消');
@@ -1157,15 +1185,32 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       let featuredMediaId: number | undefined;
       if (mainImage && this.wordPressService) {
         try {
-          LogService.log('正在上传封面图片到 WordPress...', 'SyncService');
+          LogService.log('正在上传封面图片到 WordPress 媒体库...', 'SyncService');
+          LogService.log(`图片 URL: ${mainImage}`, 'SyncService');
           const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
-          featuredMediaId = coverMedia.id;
-          LogService.success(`封面图片上传成功，media_id: ${coverMedia.id}`, 'SyncService');
+          if (coverMedia && coverMedia.id) {
+            featuredMediaId = coverMedia.id;
+            LogService.success(`✓ 封面图片上传成功！`, 'SyncService');
+            LogService.success(`  media_id: ${coverMedia.id}`, 'SyncService');
+            LogService.success(`  source_url: ${coverMedia.source_url || '未返回'}`, 'SyncService');
+          } else {
+            LogService.error(`✗ 封面图片上传异常：API 返回数据缺少 id`, 'SyncService');
+            LogService.error(`  返回数据: ${JSON.stringify(coverMedia)}`, 'SyncService');
+          }
         } catch (error) {
-          LogService.warn(`封面图片上传失败: ${error instanceof Error ? error.message : String(error)}`, 'SyncService');
-          LogService.warn('文章将不设置特色图片', 'SyncService');
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          LogService.error(`✗ 封面图片上传失败: ${errorMsg}`, 'SyncService');
+          LogService.warn('文章将不设置特色图片（featured image）', 'SyncService');
+          // 如果是 Notion 临时 URL 过期，给出提示
+          if (mainImage.includes('secure.notion-static.com') || mainImage.includes('s3.us-west')) {
+            LogService.warn('提示：Notion 文件类型的图片 URL 有时效性，建议使用外部图片链接', 'SyncService');
+          }
         }
+      } else if (!mainImage) {
+        LogService.warn('文章没有封面图片，将使用 WordPress 默认特色图片', 'SyncService');
       }
+      
+      LogService.log(`featuredMediaId 最终值: ${featuredMediaId || '未设置'}`, 'SyncService');
 
       if (abortSignal?.aborted) {
         throw new Error('同步已取消');
@@ -1175,6 +1220,7 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       LogService.log('正在转换文章格式...', 'SyncService');
       const wpArticle = this.convertToWordPressArticle(page, blocks, status, undefined, featuredMediaId);
       LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
+      LogService.log(`文章 featured_media 字段: ${wpArticle.featured_media || '未设置'}`, 'SyncService');
 
       // 发布到 WordPress
       LogService.log(`========== 开始${status === 'publish' ? '发布' : '保存草稿'}到 WordPress ==========`, 'SyncService');

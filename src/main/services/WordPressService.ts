@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import * as https from 'https';
 import * as http from 'http';
+import { Jimp } from 'jimp';
 import { 
   WordPressConfig, 
   WordPressArticle, 
@@ -12,6 +13,9 @@ import {
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { logger } from '../utils/logger';
+
+// 最大上传大小限制 (1MB)，超过此大小的图片将被压缩
+const MAX_IMAGE_SIZE = 1 * 1024 * 1024;
 
 export class WordPressService {
   private configService: ConfigService;
@@ -136,6 +140,9 @@ export class WordPressService {
 
       if (article.featured_media) {
         postData.featured_media = article.featured_media;
+        LogService.log(`设置特色图片 (featured_media): ${article.featured_media}`, 'WordPressService');
+      } else {
+        LogService.warn(`未设置特色图片 (featured_media 为空)`, 'WordPressService');
       }
 
       if (article.author) {
@@ -152,7 +159,16 @@ export class WordPressService {
         postData.meta = article.meta;
       }
 
-      LogService.log(`发送数据: ${JSON.stringify(postData, null, 2).substring(0, 500)}...`, 'WordPressService');
+      // 显示关键字段（不显示完整内容以避免日志过长）
+      const logData = {
+        title: postData.title,
+        status: postData.status,
+        featured_media: postData.featured_media || '未设置',
+        categories: postData.categories,
+        author: postData.author,
+        content_length: postData.content?.length || 0,
+      };
+      LogService.log(`发送数据摘要: ${JSON.stringify(logData, null, 2)}`, 'WordPressService');
 
       // 检查是否已取消
       if (abortSignal?.aborted) {
@@ -168,6 +184,12 @@ export class WordPressService {
         LogService.success(`========== 文章发布成功 ==========`, 'WordPressService');
         LogService.log(`文章 ID: ${response.data.id}`, 'WordPressService');
         LogService.log(`文章链接: ${response.data.link}`, 'WordPressService');
+        // 检查特色图片是否设置成功
+        if (response.data.featured_media) {
+          LogService.success(`✓ 特色图片已设置，media_id: ${response.data.featured_media}`, 'WordPressService');
+        } else if (postData.featured_media) {
+          LogService.warn(`⚠ 请求中包含 featured_media (${postData.featured_media})，但响应中未返回`, 'WordPressService');
+        }
         return response.data;
       }
 
@@ -206,7 +228,9 @@ export class WordPressService {
       LogService.log(`正在上传图片到 WordPress: ${imageUrl.substring(0, 60)}...`, 'WordPressService');
 
       // 下载图片
-      const imageBuffer = await this.downloadImage(imageUrl, abortSignal);
+      let imageBuffer = await this.downloadImage(imageUrl, abortSignal);
+      const originalSize = imageBuffer.length;
+      LogService.log(`原始图片大小: ${(originalSize / 1024).toFixed(1)} KB`, 'WordPressService');
       
       // 检查是否已取消
       if (abortSignal?.aborted) {
@@ -214,8 +238,23 @@ export class WordPressService {
       }
 
       // 确定文件名和类型
-      const finalFilename = filename || this.extractFilename(imageUrl) || `image_${Date.now()}.jpg`;
-      const contentType = this.getContentType(finalFilename);
+      let finalFilename = filename || this.extractFilename(imageUrl) || `image_${Date.now()}.jpg`;
+      let contentType = this.getContentType(finalFilename);
+
+      // 如果图片太大，进行压缩
+      if (originalSize > MAX_IMAGE_SIZE) {
+        LogService.log(`图片大小 (${(originalSize / 1024).toFixed(1)} KB) 超过限制 (${(MAX_IMAGE_SIZE / 1024).toFixed(0)} KB)，正在压缩...`, 'WordPressService');
+        try {
+          const compressed = await this.compressImage(imageBuffer, finalFilename);
+          imageBuffer = compressed.buffer;
+          finalFilename = compressed.filename;
+          contentType = compressed.contentType;
+          LogService.success(`压缩完成: ${(originalSize / 1024).toFixed(1)} KB → ${(imageBuffer.length / 1024).toFixed(1)} KB (节省 ${((1 - imageBuffer.length / originalSize) * 100).toFixed(0)}%)`, 'WordPressService');
+        } catch (compressError) {
+          LogService.warn(`图片压缩失败: ${compressError instanceof Error ? compressError.message : String(compressError)}`, 'WordPressService');
+          LogService.warn(`将尝试上传原始图片，可能会因文件过大而失败`, 'WordPressService');
+        }
+      }
 
       // 获取配置重新创建带有正确 headers 的请求
       const config = this.configService.getWordPressConfig();
@@ -255,6 +294,82 @@ export class WordPressService {
       LogService.error(`图片上传失败: ${errorMsg}`, 'WordPressService');
       throw new Error(`上传图片到 WordPress 失败: ${errorMsg}`);
     }
+  }
+
+  /**
+   * 使用 Jimp 压缩图片（纯 JavaScript，无需原生模块）
+   * 采用渐进式压缩策略，确保最终大小在限制以内
+   */
+  private async compressImage(
+    buffer: Buffer,
+    originalFilename: string
+  ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    // 目标大小：800KB（留一些余量，确保不超过服务器限制）
+    const targetSize = 800 * 1024;
+    
+    // 使用 Jimp 读取图片
+    let image = await Jimp.read(buffer);
+    
+    const originalWidth = image.width;
+    const originalHeight = image.height;
+    LogService.log(`原始图片尺寸: ${originalWidth}x${originalHeight}`, 'WordPressService');
+
+    // 渐进式压缩参数
+    const compressionLevels = [
+      { maxWidth: 1920, quality: 80 },
+      { maxWidth: 1280, quality: 70 },
+      { maxWidth: 1024, quality: 60 },
+      { maxWidth: 800, quality: 50 },
+    ];
+
+    let compressedBuffer: Buffer = buffer;
+    let finalWidth = originalWidth;
+    let finalHeight = originalHeight;
+
+    for (const level of compressionLevels) {
+      // 重新读取原图（避免多次压缩导致质量严重下降）
+      image = await Jimp.read(buffer);
+      
+      // 调整尺寸
+      if (image.width > level.maxWidth) {
+        const scale = level.maxWidth / image.width;
+        const newHeight = Math.round(image.height * scale);
+        image.resize({ w: level.maxWidth, h: newHeight });
+        finalWidth = level.maxWidth;
+        finalHeight = newHeight;
+      } else {
+        finalWidth = image.width;
+        finalHeight = image.height;
+      }
+
+      // 设置 JPEG 质量
+      image.quality = level.quality;
+
+      // 导出为 JPEG 格式的 Buffer
+      compressedBuffer = await image.getBuffer('image/jpeg');
+
+      LogService.log(`压缩尝试: ${level.maxWidth}px, 质量${level.quality}% → ${(compressedBuffer.length / 1024).toFixed(0)} KB`, 'WordPressService');
+
+      // 如果大小已经满足要求，停止压缩
+      if (compressedBuffer.length <= targetSize) {
+        LogService.log(`✓ 达到目标大小，最终尺寸: ${finalWidth}x${finalHeight}`, 'WordPressService');
+        break;
+      }
+    }
+
+    // 如果仍然超过目标，输出警告但继续使用
+    if (compressedBuffer.length > targetSize) {
+      LogService.warn(`压缩后仍有 ${(compressedBuffer.length / 1024).toFixed(0)} KB，可能仍会上传失败`, 'WordPressService');
+    }
+
+    // 更新文件名为 .jpg 扩展名
+    const newFilename = originalFilename.replace(/\.[^.]+$/, '.jpg');
+
+    return {
+      buffer: compressedBuffer,
+      filename: newFilename,
+      contentType: 'image/jpeg',
+    };
   }
 
   /**

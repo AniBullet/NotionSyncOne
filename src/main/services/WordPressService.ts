@@ -14,8 +14,12 @@ import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { logger } from '../utils/logger';
 
-// 最大上传大小限制 (1MB)，超过此大小的图片将被压缩
-const MAX_IMAGE_SIZE = 1 * 1024 * 1024;
+// 最大上传大小限制 (2MB)，超过此大小的图片将被压缩
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+
+// 【测试开关】设置为 true 时跳过压缩，直接上传原图
+// 如果服务器有限制，建议设为 false 启用压缩
+const SKIP_COMPRESSION = false;
 
 export class WordPressService {
   private configService: ConfigService;
@@ -242,7 +246,7 @@ export class WordPressService {
       let contentType = this.getContentType(finalFilename);
 
       // 如果图片太大，进行压缩
-      if (originalSize > MAX_IMAGE_SIZE) {
+      if (originalSize > MAX_IMAGE_SIZE && !SKIP_COMPRESSION) {
         LogService.log(`图片大小 (${(originalSize / 1024).toFixed(1)} KB) 超过限制 (${(MAX_IMAGE_SIZE / 1024).toFixed(0)} KB)，正在压缩...`, 'WordPressService');
         try {
           const compressed = await this.compressImage(imageBuffer, finalFilename);
@@ -254,6 +258,8 @@ export class WordPressService {
           LogService.warn(`图片压缩失败: ${compressError instanceof Error ? compressError.message : String(compressError)}`, 'WordPressService');
           LogService.warn(`将尝试上传原始图片，可能会因文件过大而失败`, 'WordPressService');
         }
+      } else if (SKIP_COMPRESSION && originalSize > MAX_IMAGE_SIZE) {
+        LogService.warn(`【测试模式】跳过压缩，直接上传原图 (${(originalSize / 1024).toFixed(1)} KB)`, 'WordPressService');
       }
 
       // 获取配置重新创建带有正确 headers 的请求
@@ -298,13 +304,13 @@ export class WordPressService {
 
   /**
    * 使用 Jimp 压缩图片（纯 JavaScript，无需原生模块）
-   * 采用渐进式压缩策略，确保最终大小在限制以内
+   * 采用渐进式压缩策略，保留原始格式，确保最终大小在限制以内
    */
   private async compressImage(
     buffer: Buffer,
     originalFilename: string
   ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
-    // 目标大小：800KB（留一些余量，确保不超过服务器限制）
+    // 目标大小：800KB（安全值，服务器限制约 1MB）
     const targetSize = 800 * 1024;
     
     // 使用 Jimp 读取图片
@@ -312,14 +318,22 @@ export class WordPressService {
     
     const originalWidth = image.width;
     const originalHeight = image.height;
-    LogService.log(`原始图片尺寸: ${originalWidth}x${originalHeight}`, 'WordPressService');
+    
+    // 检测原始格式
+    const ext = originalFilename.toLowerCase().split('.').pop() || 'jpg';
+    const isPng = ext === 'png';
+    const outputMime = isPng ? 'image/png' : 'image/jpeg';
+    const outputExt = isPng ? 'png' : 'jpg';
+    
+    LogService.log(`原始图片尺寸: ${originalWidth}x${originalHeight}, 格式: ${ext.toUpperCase()}`, 'WordPressService');
 
-    // 渐进式压缩参数
+    // 渐进式压缩参数 - 更激进的压缩以确保 <800KB
     const compressionLevels = [
-      { maxWidth: 1920, quality: 80 },
-      { maxWidth: 1280, quality: 70 },
-      { maxWidth: 1024, quality: 60 },
-      { maxWidth: 800, quality: 50 },
+      { maxWidth: 1920, quality: 85 },
+      { maxWidth: 1680, quality: 80 },
+      { maxWidth: 1280, quality: 75 },
+      { maxWidth: 1024, quality: 70 },
+      { maxWidth: 800, quality: 65 },
     ];
 
     let compressedBuffer: Buffer = buffer;
@@ -342,11 +356,13 @@ export class WordPressService {
         finalHeight = image.height;
       }
 
-      // 设置 JPEG 质量
-      image.quality = level.quality;
+      // 设置质量（PNG 不支持质量参数，但不影响）
+      if (!isPng) {
+        image.quality = level.quality;
+      }
 
-      // 导出为 JPEG 格式的 Buffer
-      compressedBuffer = await image.getBuffer('image/jpeg');
+      // 导出为原始格式的 Buffer
+      compressedBuffer = await image.getBuffer(outputMime);
 
       LogService.log(`压缩尝试: ${level.maxWidth}px, 质量${level.quality}% → ${(compressedBuffer.length / 1024).toFixed(0)} KB`, 'WordPressService');
 
@@ -359,16 +375,17 @@ export class WordPressService {
 
     // 如果仍然超过目标，输出警告但继续使用
     if (compressedBuffer.length > targetSize) {
-      LogService.warn(`压缩后仍有 ${(compressedBuffer.length / 1024).toFixed(0)} KB，可能仍会上传失败`, 'WordPressService');
+      LogService.warn(`压缩后仍有 ${(compressedBuffer.length / 1024).toFixed(0)} KB，超过目标 ${(targetSize / 1024).toFixed(0)} KB`, 'WordPressService');
+      LogService.warn(`可能仍会上传失败，建议手动选择更小的图片`, 'WordPressService');
     }
 
-    // 更新文件名为 .jpg 扩展名
-    const newFilename = originalFilename.replace(/\.[^.]+$/, '.jpg');
+    // 保持原始扩展名
+    const newFilename = originalFilename.replace(/\.[^.]+$/, `.${outputExt}`);
 
     return {
       buffer: compressedBuffer,
       filename: newFilename,
-      contentType: 'image/jpeg',
+      contentType: outputMime,
     };
   }
 

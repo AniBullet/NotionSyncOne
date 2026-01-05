@@ -5,19 +5,20 @@ import { Config } from '../../shared/types/config';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultTab?: 'notion' | 'wechat' | 'wordpress' | 'about';
 }
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const GITHUB_REPO = 'https://github.com/AniBullet/NotionSyncOne';
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultTab = 'notion' }) => {
   const [config, setConfig] = useState<Config>({
     notion: { apiKey: '', databaseId: '' },
     wechat: { appId: '', appSecret: '' },
     wordpress: { siteUrl: '', username: '', appPassword: '' },
   });
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'notion' | 'wechat' | 'wordpress' | 'about'>('notion');
+  const [activeTab, setActiveTab] = useState<'notion' | 'wechat' | 'wordpress' | 'about'>(defaultTab);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ checking: boolean; latest?: string; hasUpdate?: boolean }>({ checking: false });
@@ -25,8 +26,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       loadConfig();
+      setActiveTab(defaultTab);
     }
-  }, [isOpen]);
+  }, [isOpen, defaultTab]);
 
   const loadConfig = async () => {
     try {
@@ -145,7 +147,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       if (res.ok) {
         const data = await res.json();
         const latest = data.tag_name?.replace(/^v/, '') || '';
-        const hasUpdate = latest && latest !== APP_VERSION;
+        
+        // 版本号比较：只有服务器版本更新时才显示更新提示
+        const hasUpdate = latest && compareVersion(latest, APP_VERSION) > 0;
         setUpdateInfo({ checking: false, latest, hasUpdate });
       } else {
         setUpdateInfo({ checking: false });
@@ -155,6 +159,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       setUpdateInfo({ checking: false });
       setMessage({ type: 'error', text: '网络错误' });
     }
+  };
+
+  // 版本号比较函数：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
+  const compareVersion = (v1: string, v2: string): number => {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const num1 = parts1[i] || 0;
+      const num2 = parts2[i] || 0;
+      
+      if (num1 > num2) return 1;
+      if (num1 < num2) return -1;
+    }
+    
+    return 0;
   };
 
   if (!isOpen) return null;

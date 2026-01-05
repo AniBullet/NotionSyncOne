@@ -54,6 +54,10 @@ coverage/
 *.temp
 .cache/
 
+# 安全审计报告
+audit-report.json
+audit-temp.json
+
 # Electron
 .electron/
 .electron-builder/

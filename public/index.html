@@ -4,7 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#191919" />
-    <meta name="description" content="NotionSyncOne - 将 Notion 文章同步到多个平台" />
+    <meta name="description" content="NotionSyncOne" />
+    <!-- Content Security Policy for Electron -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: https: http:;
+      font-src 'self' data:;
+      connect-src 'self' https://api.github.com https://api.weixin.qq.com https://picsum.photos https:;
+      media-src 'self' https: http:;
+    " />
     <link rel="icon" type="image/png" href="/icon.png" />
     <title>NotionSyncOne</title>
   </head>

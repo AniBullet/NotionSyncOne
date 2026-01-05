@@ -99,18 +99,21 @@ async function createWindow() {
       }
     });
     
-    // 设置 CSP 允许加载外部图片
+    // 设置 CSP（内容安全策略）
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+            "default-src 'self'; " +
+            "script-src 'self' 'unsafe-inline'; " +  // React 需要 unsafe-inline
+            "style-src 'self' 'unsafe-inline'; " +   // CSS-in-JS 需要 unsafe-inline
             "img-src 'self' data: blob: https: http:; " +
             "media-src 'self' data: blob: https: http:; " +
             "connect-src 'self' https: http: ws: wss:; " +
-            "font-src 'self' data: https:; " +
-            "style-src 'self' 'unsafe-inline' https:;"
+            "font-src 'self' data:; " +
+            "object-src 'none'; " +
+            "base-uri 'self';"
           ]
         }
       });

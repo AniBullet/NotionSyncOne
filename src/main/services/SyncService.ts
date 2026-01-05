@@ -476,7 +476,9 @@ export class SyncService {
           const imageUrl = imageUrls[i];
           try {
             LogService.log(`[${i + 1}/${imageUrls.length}] 正在上传: ${imageUrl.substring(0, 50)}...`, 'SyncService');
-            const uploadResult = await this.weChatService.uploadImage(imageUrl, abortSignal);
+            // 为正文图片生成有意义的文件名
+            const filename = `content_image_${i + 1}.png`;
+            const uploadResult = await this.weChatService.uploadImage(imageUrl, abortSignal, filename);
             
             if (uploadResult.url) {
               imageUrlMap.set(imageUrl, uploadResult.url);

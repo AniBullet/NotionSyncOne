@@ -18,16 +18,57 @@ const MainLayout: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasWordPressConfig, setHasWordPressConfig] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'notion' | 'wechat' | 'wordpress' | 'about'>('notion');
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
     onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const [hasUpdate, setHasUpdate] = useState(false);
 
   useEffect(() => {
     loadData();
+    checkUpdate();
   }, []);
+
+  const checkUpdate = async () => {
+    try {
+      // 读取当前版本
+      const pkg = await fetch('/package.json').then(r => r.json()).catch(() => ({ version: '1.0.1' }));
+      const currentVersion = pkg.version || '1.0.1';
+
+      // 检查 GitHub 最新版本
+      const res = await fetch('https://api.github.com/repos/AniBullet/NotionSyncOne/releases/latest');
+      if (res.ok) {
+        const data = await res.json();
+        const latestVersion = data.tag_name?.replace(/^v/, '') || '';
+        
+        // 比较版本号：只有服务器版本更新时才提示
+        if (latestVersion && compareVersion(latestVersion, currentVersion) > 0) {
+          setHasUpdate(true);
+        }
+      }
+    } catch {
+      // 静默失败，不影响主功能
+    }
+  };
+
+  // 版本号比较函数：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
+  const compareVersion = (v1: string, v2: string): number => {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const num1 = parts1[i] || 0;
+      const num2 = parts2[i] || 0;
+      
+      if (num1 > num2) return 1;
+      if (num1 < num2) return -1;
+    }
+    
+    return 0;
+  };
 
   const loadData = async () => {
     try {
@@ -229,6 +270,27 @@ const MainLayout: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src={iconUrl} alt="NotionSyncOne" style={{ width: '26px', height: '26px', borderRadius: '6px' }} />
             <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>NotionSyncOne</span>
+            {hasUpdate && (
+              <span
+                onClick={() => {
+                  setSettingsTab('about');
+                  setShowSettings(true);
+                }}
+                style={{
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  backgroundColor: '#10B981',
+                  color: '#fff',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  animation: 'pulse 2s infinite'
+                }}
+                title="点击查看更新"
+              >
+                有新版本
+              </span>
+            )}
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
@@ -321,7 +383,15 @@ const MainLayout: React.FC = () => {
       </main>
 
       {/* 设置弹窗 */}
-      <SettingsModal isOpen={showSettings} onClose={() => { setShowSettings(false); loadData(); }} />
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => { 
+          setShowSettings(false); 
+          setSettingsTab('notion');
+          loadData(); 
+        }}
+        defaultTab={settingsTab}
+      />
 
       {/* 确认对话框 */}
       <ConfirmDialog

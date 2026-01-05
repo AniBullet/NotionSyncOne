@@ -35,6 +35,15 @@ body {
   }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 /* 图标 */
 .icon {
   @apply w-[1.2em] h-[1.2em] inline-block align-middle;

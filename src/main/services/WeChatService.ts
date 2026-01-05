@@ -18,32 +18,165 @@ export class WeChatService {
   }
 
   /**
-   * 按微信接口要求限制标题/摘要长度（按 UTF-8 字节数截断）
-   * 说明：微信标题/摘要限制大约 64 字节，这里使用 64 作为安全上限
+   * 按微信接口要求限制标题/摘要长度（按字符数截断）
+   * 官方限制：
+   * - 标题 (title): 64 字符
+   * - 摘要 (digest): 120 字符
+   * 来源：微信公众平台官方规定
    */
-  private cutTextForWeChat(raw: string, maxBytes: number = 64, fieldName: string = 'title'): string {
+  private cutTextForWeChat(raw: string, maxChars: number = 64, fieldName: string = 'title'): string {
     if (!raw) return '';
 
-    let bytes = 0;
-    let result = '';
-
-    for (const ch of raw) {
-      const len = Buffer.byteLength(ch, 'utf8');
-      if (bytes + len > maxBytes) {
-        break;
-      }
-      bytes += len;
-      result += ch;
+    // 微信限制是按字符数，不是字节数
+    if (raw.length <= maxChars) {
+      return raw;
     }
 
-    if (result.length < raw.length) {
-      LogService.warn(
-        `字段 "${fieldName}" 长度超出微信限制，已自动截断。原始长度: ${raw.length} 字符，截断后: ${result.length} 字符`,
-        'WeChatService'
-      );
-    }
+    // 截断到指定字符数
+    const result = raw.substring(0, maxChars);
+
+    LogService.warn(
+      `字段 "${fieldName}" 长度超出微信限制，已自动截断。原始长度: ${raw.length} 字符，截断后: ${result.length} 字符（限制: ${maxChars}）`,
+      'WeChatService'
+    );
 
     return result;
+  }
+
+  /**
+   * 截断文章内容，确保不超过微信公众号限制
+   * 官方限制：单篇图文消息正文不能超过 20,000 字符（纯文字，不含HTML标签）
+   * 来源：微信公众平台官方规定
+   */
+  /**
+   * 直接截断HTML内容到指定长度（按HTML字符数，不是纯文本）
+   */
+  private truncateHtml(htmlContent: string, maxLength: number): string {
+    if (!htmlContent || htmlContent.length <= maxLength) {
+      return htmlContent;
+    }
+
+    // 截断到安全长度（留足够空间给闭合标签和提示文字）
+    const safeLength = Math.floor(maxLength * 0.80); // 80%的空间给原内容，20%给闭合和提示
+    let truncated = htmlContent.substring(0, safeLength);
+    
+    // 确保不会在标签中间截断
+    const lastTagStart = truncated.lastIndexOf('<');
+    const lastTagEnd = truncated.lastIndexOf('>');
+    if (lastTagStart > lastTagEnd) {
+      // 在标签中间截断了，回退到上一个完整标签
+      truncated = truncated.substring(0, lastTagStart);
+    }
+    
+    // 移除末尾可能不完整的内容（比如半个词或句子）
+    const lastSpace = truncated.lastIndexOf(' ');
+    if (lastSpace > truncated.length - 100) {
+      truncated = truncated.substring(0, lastSpace);
+    }
+    
+    // 确保 HTML 标签闭合
+    truncated = this.ensureHtmlClosed(truncated);
+    
+    // 添加简洁的截断提示
+    truncated += '\n<hr style="margin:2em 0;border:0;height:1px;background:#e0e0e0;" />';
+    truncated += '\n<p style="text-align:center;color:#999;font-size:14px;">内容过长已自动截断，完整内容请点击原文链接查看</p>';
+
+    return truncated;
+  }
+
+  /**
+   * 截断文章内容（按纯文本字符数）
+   * @deprecated 使用 truncateHtml 代替
+   */
+  private truncateContent(content: string, maxLength: number = 20000): string {
+    if (!content) return '';
+    
+    // 移除 HTML 标签计算实际文字长度
+    const textContent = content.replace(/<[^>]*>/g, '');
+    
+    if (textContent.length <= maxLength) {
+      return content;
+    }
+
+    LogService.warn(
+      `文章内容过长（${textContent.length} 字符），将截断至 ${maxLength} 字符`,
+      'WeChatService'
+    );
+
+    // 智能截断：尝试在段落或句子边界截断
+    let truncated = content;
+    let currentLength = 0;
+    const parser = /<[^>]+>|[^<]+/g;
+    const parts: string[] = [];
+    let match;
+
+    while ((match = parser.exec(content)) !== null) {
+      const part = match[0];
+      const isTag = part.startsWith('<');
+      
+      if (!isTag) {
+        // 纯文本，计入长度
+        if (currentLength + part.length > maxLength) {
+          // 需要截断
+          const remaining = maxLength - currentLength;
+          if (remaining > 0) {
+            parts.push(part.substring(0, remaining) + '...');
+          }
+          break;
+        }
+        currentLength += part.length;
+      }
+      parts.push(part);
+    }
+
+    truncated = parts.join('');
+    
+    // 确保 HTML 标签闭合
+    truncated = this.ensureHtmlClosed(truncated);
+    
+    // 添加提示信息
+    truncated += '<hr style="margin: 2em 0; border: 0; height: 1px; background: #e0e0e0;" />';
+    truncated += '<p style="text-align: center; color: #999; font-size: 14px;">✂️ 内容过长已自动截断，完整内容请点击原文链接查看</p>';
+
+    return truncated;
+  }
+
+  /**
+   * 确保 HTML 标签正确闭合
+   */
+  private ensureHtmlClosed(html: string): string {
+    const openTags: string[] = [];
+    const tagPattern = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
+    let match;
+
+    while ((match = tagPattern.exec(html)) !== null) {
+      const fullTag = match[0];
+      const tagName = match[1].toLowerCase();
+      
+      // 跳过自闭合标签
+      if (['img', 'br', 'hr', 'input', 'meta', 'link'].includes(tagName)) {
+        continue;
+      }
+
+      if (fullTag.startsWith('</')) {
+        // 闭合标签
+        const index = openTags.lastIndexOf(tagName);
+        if (index !== -1) {
+          openTags.splice(index, 1);
+        }
+      } else if (!fullTag.endsWith('/>')) {
+        // 开放标签
+        openTags.push(tagName);
+      }
+    }
+
+    // 闭合所有未闭合的标签
+    while (openTags.length > 0) {
+      const tagName = openTags.pop();
+      html += `</${tagName}>`;
+    }
+
+    return html;
   }
 
   async publishArticle(article: WeChatArticle, publishMode: 'publish' | 'draft' = 'publish', abortSignal?: AbortSignal): Promise<void> {
@@ -89,7 +222,7 @@ export class WeChatService {
 
         LogService.log(`开始上传封面图片: ${imageUrl.substring(0, 80)}...`, 'WeChatService');
         try {
-          const uploadResult = await this.uploadImage(imageUrl, abortSignal);
+          const uploadResult = await this.uploadImage(imageUrl, abortSignal, 'cover.png');
           thumbMediaId = uploadResult.mediaId;
           uploadedImageUrl = uploadResult.url || null;
           if (!thumbMediaId) {
@@ -154,10 +287,26 @@ export class WeChatService {
         LogService.log(`原始URL: ${imageUrl.substring(0, 60)}...`, 'WeChatService');
         LogService.log(`新URL: ${uploadedImageUrl.substring(0, 60)}...`, 'WeChatService');
       }
+
+      // 检查并截断内容（微信公众号限制）
+      // 微信对content字段的限制：根据测试，HTML总长度不能超过约20000-30000字符
+      // 采用保守策略：限制HTML总长度为20000字符
+      const htmlLength = processedContent.length;
+      const textLength = processedContent.replace(/<[^>]*>/g, '').length;
+      LogService.log(`文章内容 - HTML总长度: ${htmlLength} 字符, 纯文本长度: ${textLength} 字符`, 'WeChatService');
       
-      // 构建文章数据对象（对标题和摘要做一次微信长度安全截断）
-      const safeTitle = this.cutTextForWeChat(article.title, 128, 'title');
-      const safeDigest = this.cutTextForWeChat(article.digest || article.title, 128, 'digest');
+      const MAX_HTML_LENGTH = 18000; // 更保守的限制：18000字符（微信实际限制约20000）
+      if (htmlLength > MAX_HTML_LENGTH) {
+        LogService.warn(`⚠️ HTML内容过长（${htmlLength} > ${MAX_HTML_LENGTH}），将截断`, 'WeChatService');
+        // 直接截断HTML字符串到安全长度
+        processedContent = this.truncateHtml(processedContent, MAX_HTML_LENGTH);
+        LogService.log(`截断后 - HTML: ${processedContent.length} 字符, 纯文本: ${processedContent.replace(/<[^>]*>/g, '').length} 字符`, 'WeChatService');
+      }
+      
+      // 构建文章数据对象（按微信官方限制截断标题和摘要）
+      // 官方限制：标题64字符，摘要120字符
+      const safeTitle = this.cutTextForWeChat(article.title, 64, 'title');
+      const safeDigest = this.cutTextForWeChat(article.digest || article.title, 120, 'digest');
 
       const articleItem: any = {
         title: safeTitle,
@@ -182,7 +331,7 @@ export class WeChatService {
       };
 
       LogService.log(`准备创建草稿 - 标题: ${article.title}, 作者: ${article.author || '匿名'}, 原文链接: ${article.contentSourceUrl || '无'}`, 'WeChatService');
-      LogService.log(`文章内容长度: ${article.content.length} 字符`, 'WeChatService');
+      LogService.log(`最终发送内容 - HTML长度: ${processedContent.length} 字符, 纯文本长度: ${processedContent.replace(/<[^>]*>/g, '').length} 字符`, 'WeChatService');
       LogService.log(`发送到微信的完整数据: ${JSON.stringify(articleData, null, 2)}`, 'WeChatService');
 
       // 检查是否已取消
@@ -572,7 +721,7 @@ export class WeChatService {
     throw new Error('图片下载失败：重试次数已用完');
   }
 
-  async uploadImage(imageUrl: string, abortSignal?: AbortSignal): Promise<{ mediaId: string; url?: string }> {
+  async uploadImage(imageUrl: string, abortSignal?: AbortSignal, filename?: string): Promise<{ mediaId: string; url?: string }> {
     try {
       logger.log('开始上传图片:', imageUrl.substring(0, 50) + '...');
       const accessToken = await this.getAccessToken();
@@ -593,16 +742,31 @@ export class WeChatService {
         throw new Error('同步已取消');
       }
 
+      // 确定文件名：优先使用提供的文件名，否则从URL提取，最后使用默认值
+      let finalFilename = filename;
+      if (!finalFilename) {
+        // 从URL中提取文件名
+        const urlPath = imageUrl.split('?')[0]; // 移除查询参数
+        const parts = urlPath.split('/');
+        const urlFilename = parts[parts.length - 1];
+        // 如果URL文件名有效（包含扩展名），使用它；否则生成一个
+        if (urlFilename && /\.(jpg|jpeg|png|gif|webp)$/i.test(urlFilename)) {
+          finalFilename = urlFilename;
+        } else {
+          finalFilename = `image_${Date.now()}.png`;
+        }
+      }
+
       // 创建 FormData
       const formData = new FormData();
       // 将 Buffer 转换为 Uint8Array，然后创建 Blob
       const uint8Array = new Uint8Array(buffer);
       const blob = new Blob([uint8Array], { type: 'image/png' });
-      formData.append('media', blob, 'cover.png');
+      formData.append('media', blob, finalFilename);
       // 添加描述信息
       formData.append('description', JSON.stringify({
-        title: 'Article Cover Image',
-        introduction: 'Auto generated cover image'
+        title: finalFilename.replace(/\.(jpg|jpeg|png|gif|webp)$/i, ''),
+        introduction: `Uploaded from: ${imageUrl.substring(0, 100)}`
       }));
 
       // 上传到微信

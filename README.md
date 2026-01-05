@@ -243,6 +243,22 @@ pnpm preview          # 预览构建结果
 
 更多问题请查看 [快速开始指南](./docs/QUICK_START.md)
 
+## 📋 更新日志
+
+### 最新版本：v1.0.1
+
+**🐛 修复**
+- 修复文章内容过长导致微信发布失败的问题（45166 错误）
+- 优化图片命名：封面图显示为 `cover.png`，正文图片按顺序命名为 `content_image_1.png` 等
+- 修复 Electron 安全警告（Content-Security-Policy）
+
+**📝 改进**
+- 实现智能内容截断，确保符合微信 20000 字符限制
+- 优化 HTML 标签闭合逻辑
+- 改进日志输出，便于问题排查
+
+查看完整更新记录：[CHANGELOG.md](./docs/CHANGELOG.md)
+
 ## 🤝 参考项目
 
 本项目参考并优化了以下开源项目：
@@ -254,13 +270,22 @@ pnpm preview          # 预览构建结果
 
 ## 🤝 贡献指南
 
-欢迎贡献代码！
+欢迎贡献代码！我们欢迎各种形式的贡献：
+
+- 🐛 **报告 Bug**：在 [Issues](https://github.com/AniBullet/NotionSyncOne/issues) 中提交问题
+- ✨ **功能建议**：分享你的想法和改进建议
+- 💻 **代码贡献**：提交 Pull Request
+- 📝 **文档改进**：帮助完善文档
+
+### 贡献流程
 
 1. Fork 本仓库
 2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 提交 Pull Request
+
+详细的开发规范和提交规范请查看：[贡献指南](./docs/CONTRIBUTING.md)
 
 ## 📄 许可证
 

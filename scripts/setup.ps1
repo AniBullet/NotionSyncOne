@@ -1,4 +1,4 @@
-# NotionSyncOne 环境初始化脚本 (Windows)
+﻿# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
 # 切换到项目根目录
@@ -53,10 +53,11 @@ Write-Host "      清理完成" -ForegroundColor Green
 # 创建 .npmrc 配置
 Write-Host ""
 Write-Host "[4/6] 创建配置文件..."
-@"
+$npmrcContent = @"
 enable-pre-post-scripts=true
 side-effects-cache=true
-"@ | Out-File -FilePath ".npmrc" -Encoding utf8 -NoNewline
+"@
+$npmrcContent | Out-File -FilePath ".npmrc" -Encoding utf8 -NoNewline
 Write-Host "      .npmrc 创建成功" -ForegroundColor Green
 
 # 安装依赖

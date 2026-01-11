@@ -930,12 +930,91 @@ export class SyncService {
         const url = block.content?.url || '';
         const caption = block.content?.caption?.[0]?.plain_text || '';
         if (url) {
-          // 蓝色加粗下划线链接
-          if (caption) {
-            return `<p style="margin: 1.2em 0; line-height: 1.8;"><strong>🎬 ${this.escapeHtml(caption)}</strong><br/><a href="${url}" style="color: rgb(0, 82, 255); text-decoration: underline; font-weight: bold;">${url}</a></p>`;
-          } else {
-            return `<p style="margin: 1.2em 0; line-height: 1.8;"><a href="${url}" style="color: rgb(0, 82, 255); text-decoration: underline; font-weight: bold;">🎬 ${url}</a></p>`;
+          // 判断视频类型并生成相应的嵌入代码
+          let videoHtml = '';
+          
+          // YouTube 视频检测
+          const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+          if (youtubeMatch) {
+            const videoId = youtubeMatch[1];
+            videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
+              <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
+                src="https://www.youtube.com/embed/${videoId}" 
+                frameborder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen>
+              </iframe>
+            </div>`;
           }
+          // Vimeo 视频检测
+          else if (url.includes('vimeo.com')) {
+            const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+            if (vimeoMatch) {
+              const videoId = vimeoMatch[1];
+              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
+                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
+                  src="https://player.vimeo.com/video/${videoId}" 
+                  frameborder="0" 
+                  allow="autoplay; fullscreen; picture-in-picture" 
+                  allowfullscreen>
+                </iframe>
+              </div>`;
+            }
+          }
+          // Bilibili 视频检测
+          else if (url.includes('bilibili.com')) {
+            const bvMatch = url.match(/BV[a-zA-Z0-9]+/);
+            const avMatch = url.match(/av(\d+)/);
+            if (bvMatch) {
+              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
+                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
+                  src="https://player.bilibili.com/player.html?bvid=${bvMatch[0]}&page=1" 
+                  scrolling="no" 
+                  border="0" 
+                  frameborder="no" 
+                  framespacing="0" 
+                  allowfullscreen="true">
+                </iframe>
+              </div>`;
+            } else if (avMatch) {
+              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
+                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
+                  src="https://player.bilibili.com/player.html?aid=${avMatch[1]}&page=1" 
+                  scrolling="no" 
+                  border="0" 
+                  frameborder="no" 
+                  framespacing="0" 
+                  allowfullscreen="true">
+                </iframe>
+              </div>`;
+            }
+          }
+          // 通用视频文件（mp4, webm, ogg 等）
+          else if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)) {
+            videoHtml = `<div style="margin: 1.5em 0; text-align: center;">
+              <video controls style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <source src="${this.escapeHtml(url)}" type="video/${url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)?.[1] || 'mp4'}">
+                您的浏览器不支持 HTML5 视频播放。
+                <a href="${this.escapeHtml(url)}" style="color: #0073aa;">下载视频</a>
+              </video>
+            </div>`;
+          }
+          // 如果无法识别视频类型，使用 WordPress 的 [video] 短代码
+          else {
+            videoHtml = `<p style="margin: 1.2em 0; padding: 1em; background-color: #f0f7ff; border-left: 4px solid #1890ff; border-radius: 4px;">
+              [video src="${this.escapeHtml(url)}"]
+            </p>`;
+          }
+          
+          // 添加标题（如果有）
+          if (caption) {
+            return `<div style="margin: 1.5em 0;">
+              ${videoHtml}
+              <p style="text-align: center; margin-top: 0.8em; color: #666; font-size: 14px;">🎬 ${this.escapeHtml(caption)}</p>
+            </div>`;
+          }
+          
+          return videoHtml;
         } else {
           const captionText = caption || '视频内容';
           return `<p style="margin: 1em 0; padding: 1em; background-color: #f7f7f7; border-radius: 6px; color: #666; text-align: center;">[视频: ${this.escapeHtml(captionText)}]</p>`;

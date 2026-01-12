@@ -10,8 +10,8 @@ exports.default = async function(context) {
     return;
   }
   
-  // 保留的语言：中文和英文
-  const keepLocales = ['zh-CN.pak', 'zh-TW.pak', 'en-US.pak', 'en-GB.pak'];
+  // 保留的语言：只保留中文和英文（美国）
+  const keepLocales = ['zh-CN.pak', 'en-US.pak'];
   
   const files = fs.readdirSync(localesPath);
   let removed = 0;

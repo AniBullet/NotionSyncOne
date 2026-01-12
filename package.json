@@ -34,7 +34,11 @@
       "out/**/*",
       "package.json",
       "assets/icon.ico",
-      "!out/**/*.map"
+      "!out/**/*.map",
+      "!out/**/*.js.map",
+      "!**/*.log",
+      "!**/.DS_Store",
+      "!**/Thumbs.db"
     ],
     "extraResources": [
       {
@@ -42,9 +46,7 @@
         "to": "icon.ico"
       }
     ],
-    "asarUnpack": [
-      "out/main/**/*"
-    ],
+    "asarUnpack": [],
     "compression": "maximum",
     "afterPack": "./scripts/remove-locales.js",
     "win": {
@@ -63,7 +65,8 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "asar": true
+      "asar": true,
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,

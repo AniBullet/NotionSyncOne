@@ -60,11 +60,30 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       minify: isProduction ? 'esbuild' : false,
       sourcemap: !isProduction,
+      target: 'esnext',
+      // 优化构建性能和体积
+      chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
-          manualChunks: isProduction ? {
-            'vendor': ['react', 'react-dom']
-          } : undefined
+          // 更精细的代码分割，减小主包体积
+          manualChunks: isProduction ? (id) => {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              if (id.includes('@notionhq')) {
+                return 'vendor-notion';
+              }
+              if (id.includes('axios')) {
+                return 'vendor-axios';
+              }
+              return 'vendor';
+            }
+          } : undefined,
+          // 减小文件名长度
+          entryFileNames: isProduction ? '[name].[hash:8].js' : '[name].js',
+          chunkFileNames: isProduction ? '[name].[hash:8].js' : '[name].js',
+          assetFileNames: isProduction ? '[name].[hash:8].[ext]' : '[name].[ext]'
         }
       }
   },

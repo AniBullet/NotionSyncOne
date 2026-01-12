@@ -1,96 +1,38 @@
 # 依赖
 node_modules/
-.pnpm-debug.log*
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
 
-# 编译输出
+# 构建输出
 dist/
-dist-electron/
 out/
-*.local
-
-# 编辑器
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# 环境变量和配置（安全重要！）
-.env
-.env.local
-.env.*.local
-config/
-config.json
-*.key
-*.pem
-*.p12
-
-# 日志（安全重要！）
-logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-debug.log
-error.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # 系统文件
-Thumbs.db 
-.AppleDouble
-.LSOverride
-
-# 测试覆盖率
-coverage/
-*.lcov
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # 临时文件
 *.tmp
 *.temp
 .cache/
 
-# 安全审计报告
-audit-report.json
-audit-temp.json
+# 用户数据（不提交）
+*.env
+*.env.local
+config.json
+sync-states.json
 
-# Electron
-.electron/
-.electron-builder/
-
-# 打包文件（可选择性忽略）
-*.exe
-*.dmg
-*.AppImage
-*.deb
-*.rpm
-*.zip
-*.tar.gz
-
-# 用户数据（安全重要！）
-userData/
-user-data/
-%APPDATA%/
-
-# Bilibili Cookie（安全重要！）
-**/cookies.json
-**/bilibili-cookies.json
-temp/**/cookies.json
-
-# 临时文件和缓存
-**/notionsyncone-bilibili/
-**/notionsyncone-temp/
-
-# 备份文件
-*.bak
-*.backup
-*~
-
-# 数据库文件（如果有）
-*.db
-*.sqlite
-*.sqlite3
+# Source maps (生产环境不需要)
+*.map
+*.js.map
+*.css.map

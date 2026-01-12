@@ -7,8 +7,9 @@ interface LogEntry {
 
 export class LogService {
   private static logs: LogEntry[] = [];
-  private static maxLogs = 500;
+  private static maxLogs = 300; // 减少最大日志数量，从 500 -> 300
   private static listeners: Set<(log: LogEntry) => void> = new Set();
+  private static isDevelopment = process.env.NODE_ENV === 'development';
 
   static log(message: string, source?: string) {
     this.addLog('info', message, source);
@@ -36,7 +37,7 @@ export class LogService {
 
     this.logs.push(log);
     
-    // 限制日志数量
+    // 限制日志数量，防止内存占用过大
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
     }
@@ -44,12 +45,15 @@ export class LogService {
     // 通知所有监听器
     this.listeners.forEach(listener => listener(log));
 
-    // 同时输出到控制台
-    const consoleMethod = level === 'error' ? console.error : 
-                         level === 'warn' ? console.warn : 
-                         console.log;
-    const prefix = source ? `[${source}]` : '';
-    consoleMethod(`${prefix} ${message}`);
+    // 控制台输出：生产环境只输出错误和警告，开发环境输出所有日志
+    const shouldLog = this.isDevelopment || level === 'error' || level === 'warn';
+    if (shouldLog) {
+      const consoleMethod = level === 'error' ? console.error : 
+                           level === 'warn' ? console.warn : 
+                           console.log;
+      const prefix = source ? `[${source}]` : '';
+      consoleMethod(`${prefix} ${message}`);
+    }
   }
 
   static getLogs(filter?: { level?: LogEntry['level'], source?: string, keyword?: string }): LogEntry[] {

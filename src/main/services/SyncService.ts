@@ -159,28 +159,18 @@ export class SyncService {
 
   // 获取封面图片 URL（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
   private getCoverImageUrl(page: NotionPage): string {
-    LogService.log(`[getCoverImageUrl] 开始查找封面图片...`, 'SyncService');
-    
     // 1. 优先使用页面的 cover 属性（Notion API 直接提供的封面）
     if (page.cover) {
-      LogService.log(`[getCoverImageUrl] 找到页面 cover 属性，类型: ${page.cover.type}`, 'SyncService');
       if (page.cover.type === 'external' && page.cover.external) {
-        const url = page.cover.external.url;
-        LogService.log(`[getCoverImageUrl] ✓ 使用外部封面图片: ${url.substring(0, 80)}...`, 'SyncService');
-        return url;
+        return page.cover.external.url;
       } else if (page.cover.type === 'file' && page.cover.file) {
         const url = page.cover.file.url;
-        LogService.log(`[getCoverImageUrl] ✓ 使用 Notion 文件封面图片: ${url.substring(0, 80)}...`, 'SyncService');
-        // 提醒：Notion 文件 URL 有时效性
+        // 只在 Notion 临时 URL 时给出警告
         if (url.includes('secure.notion-static.com') || url.includes('s3.us-west')) {
-          LogService.warn(`[getCoverImageUrl] 注意：Notion 文件 URL 有时效性，可能会过期`, 'SyncService');
+          LogService.warn(`封面使用 Notion 临时 URL，可能会过期`, 'SyncService');
         }
         return url;
-      } else {
-        LogService.warn(`[getCoverImageUrl] cover 类型不支持: ${page.cover.type}`, 'SyncService');
       }
-    } else {
-      LogService.log('[getCoverImageUrl] 页面没有 cover 属性，查找自定义属性...', 'SyncService');
     }
 
     // 2. 查找 Cover 属性（自定义属性）
@@ -193,40 +183,27 @@ export class SyncService {
     }
     
     if (!coverProp) {
-      LogService.warn('[getCoverImageUrl] ✗ 未找到 Cover 或 MainImage 属性', 'SyncService');
       return '';
     }
     
-    LogService.log(`[getCoverImageUrl] 找到 ${propSource} 属性，类型: ${coverProp.type}`, 'SyncService');
-    
     // 处理不同类型的属性
     if (coverProp.type === 'files' && Array.isArray(coverProp.files)) {
-      // files 类型，取第一个文件的 URL
       const firstFile = coverProp.files[0];
       if (firstFile) {
         if (firstFile.type === 'file' && firstFile.file) {
-          LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} files 属性获取封面`, 'SyncService');
           return firstFile.file.url;
         } else if (firstFile.type === 'external' && firstFile.external) {
-          LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} files(external) 属性获取封面`, 'SyncService');
           return firstFile.external.url;
         }
       }
-      LogService.warn(`[getCoverImageUrl] ${propSource} files 属性为空`, 'SyncService');
-    } else if (coverProp.type === 'url') {
-      if (coverProp.url) {
-        LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} url 属性获取封面`, 'SyncService');
-        return coverProp.url;
-      }
+    } else if (coverProp.type === 'url' && coverProp.url) {
+      return coverProp.url;
     } else if ((coverProp as any).url) {
-      LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} 直接 url 获取封面`, 'SyncService');
       return (coverProp as any).url;
     } else if (coverProp.rich_text?.[0]?.plain_text) {
-      LogService.log(`[getCoverImageUrl] ✓ 从 ${propSource} rich_text 获取封面 URL`, 'SyncService');
       return coverProp.rich_text[0].plain_text;
     }
     
-    LogService.warn(`[getCoverImageUrl] ✗ ${propSource} 属性存在但无法提取 URL`, 'SyncService');
     return '';
   }
 
@@ -236,7 +213,9 @@ export class SyncService {
       if (fs.existsSync(this.syncStateFile)) {
         const data = fs.readFileSync(this.syncStateFile, 'utf8');
         this.syncStates = JSON.parse(data);
-        console.log('已加载同步状态:', this.syncStates);
+        
+        const totalStates = Object.keys(this.syncStates).length;
+        console.log(`已加载 ${totalStates} 个同步状态`);
         
         // 启动时自动重置所有 SYNCING 状态为 FAILED（程序重启意味着之前的同步已中断）
         let resetCount = 0;
@@ -266,7 +245,10 @@ export class SyncService {
   private saveSyncStates() {
     try {
       fs.writeFileSync(this.syncStateFile, JSON.stringify(this.syncStates, null, 2));
-      console.log('已保存同步状态');
+      // 精简日志：只在开发模式下输出详细信息
+      if (process.env.NODE_ENV === 'development') {
+        console.log('同步状态已保存');
+      }
     } catch (error) {
       console.error('保存同步状态失败:', error);
     }
@@ -448,8 +430,9 @@ export class SyncService {
       const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
       // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
       let mainImage = this.getCoverImageUrl(page);
-      LogService.log(`封面图片: ${mainImage || '未找到'}`, 'SyncService');
-      // 移除详细日志，避免日志过多
+      if (mainImage) {
+        LogService.log(`封面图片: ${mainImage.substring(0, 60)}...`, 'SyncService');
+      }
 
       // 检查是否已取消
       if (abortSignal?.aborted) {
@@ -486,7 +469,7 @@ export class SyncService {
       const failedImages: string[] = []; // 记录失败的图片
       
       if (imageUrls.length > 0) {
-        LogService.log('========== 开始批量上传图片到微信素材库 ==========', 'SyncService');
+        LogService.log(`开始上传 ${imageUrls.length} 张图片到微信素材库`, 'SyncService');
         for (let i = 0; i < imageUrls.length; i++) {
           if (abortSignal?.aborted) {
             throw new Error('同步已取消');
@@ -494,37 +477,28 @@ export class SyncService {
           
           const imageUrl = imageUrls[i];
           try {
-            LogService.log(`[${i + 1}/${imageUrls.length}] 正在上传: ${imageUrl.substring(0, 50)}...`, 'SyncService');
-            // 为正文图片生成有意义的文件名
+            // 只显示进度，不显示每张图片的详细URL
+            LogService.log(`上传进度: ${i + 1}/${imageUrls.length}`, 'SyncService');
             const filename = `content_image_${i + 1}.png`;
             const uploadResult = await this.weChatService.uploadImage(imageUrl, abortSignal, filename);
             
             if (uploadResult.url) {
               imageUrlMap.set(imageUrl, uploadResult.url);
-              LogService.success(`✓ 上传成功`, 'SyncService');
             } else {
-              LogService.error(`✗ 上传成功但未返回URL`, 'SyncService');
               failedImages.push(imageUrl);
             }
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
-            LogService.error(`✗ 上传失败: ${errorMsg}`, 'SyncService');
+            LogService.warn(`图片 ${i + 1} 上传失败: ${errorMsg}`, 'SyncService');
             failedImages.push(imageUrl);
           }
         }
         
-        LogService.success(`========== 图片上传完成: ${imageUrlMap.size}/${imageUrls.length} 成功 ==========`, 'SyncService');
+        LogService.success(`图片上传完成: ${imageUrlMap.size}/${imageUrls.length} 成功`, 'SyncService');
         
-        // 如果有失败的图片，给出明确提示
+        // 如果有失败的图片，给出简要提示
         if (failedImages.length > 0) {
-          LogService.warn(`\n以下 ${failedImages.length} 张图片上传失败：`, 'SyncService');
-          failedImages.forEach((url, index) => {
-            LogService.warn(`  ${index + 1}. ${url.substring(0, 80)}`, 'SyncService');
-          });
-          LogService.warn(`\n建议：`, 'SyncService');
-          LogService.warn(`  1. 检查图片URL是否可访问`, 'SyncService');
-          LogService.warn(`  2. 某些网站的图片可能需要登录才能访问`, 'SyncService');
-          LogService.warn(`  3. 可以手动下载图片后上传到 Notion`, 'SyncService');
+          LogService.warn(`${failedImages.length} 张图片上传失败，建议检查图片URL是否可访问`, 'SyncService');
         }
       }
       
@@ -921,9 +895,7 @@ export class SyncService {
         
         // **使用微信服务器URL替换原始URL**
         if (url && imageUrlMap && imageUrlMap.has(url)) {
-          const wechatUrl = imageUrlMap.get(url)!;
-          LogService.log(`图片URL替换: ${url.substring(0, 40)}... -> ${wechatUrl.substring(0, 40)}...`, 'SyncService');
-          url = wechatUrl;
+          url = imageUrlMap.get(url)!;
         }
         
         if (url) {

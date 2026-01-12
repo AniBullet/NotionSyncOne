@@ -1,6 +1,6 @@
 @echo off
-REM 切换到项目根目录
-cd /d "%~dp0\.."
+REM NotionSyncOne 开发服务器启动脚本
+cd /d "%~dp0"
 
 REM 检测管理员权限（静默检测，不自动提升）
 REM 如需管理员权限，请手动右键"以管理员身份运行"

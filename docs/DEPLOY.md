@@ -37,8 +37,8 @@ pnpm install
 
 #### 5. 启动应用
 ```bash
-# Windows 用户
-.\scripts\dev.cmd
+# Windows 用户（推荐）
+.\ns-dev.cmd
 
 # 或手动启动
 pnpm dev
@@ -59,7 +59,7 @@ pnpm dev
 
 在源码电脑上运行：
 ```bash
-.\scripts\build.cmd
+.\ns-build.cmd   # 推荐
 ```
 
 或手动运行：
@@ -123,7 +123,7 @@ C:\Users\你的用户名\AppData\Roaming\notionsyncone\config\
 **A:** 
 1. 删除 `node_modules` 重新安装：`pnpm install`
 2. 清理构建文件：删除 `out/` 和 `dist/`
-3. 重新运行 `.\scripts\build.cmd`
+3. 重新运行 `.\ns-build.cmd`
 
 ### Q: 端口 5173 被占用？
 **A:** 

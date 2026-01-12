@@ -20,7 +20,7 @@ pnpm install
 ### 3. 启动开发服务器
 
 ```bash
-.\scripts\dev.cmd   # Windows
+.\ns-dev.cmd   # Windows（推荐）
 # 或
 pnpm dev
 ```
@@ -94,7 +94,7 @@ pnpm test
 ## 📦 构建
 
 ```bash
-.\scripts\build.cmd   # Windows
+.\ns-build.cmd   # Windows（推荐）
 # 或
 pnpm build
 ```

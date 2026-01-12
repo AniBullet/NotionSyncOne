@@ -1,15 +1,18 @@
-import { ipcMain, dialog, Notification } from 'electron';
+import { ipcMain, dialog, Notification, BrowserWindow } from 'electron';
 import { ConfigService } from '../services/ConfigService';
 import { NotionService } from '../services/NotionService';
 import { SyncService } from '../services/SyncService';
 import { WeChatService } from '../services/WeChatService';
 import { WordPressService } from '../services/WordPressService';
+import { BilibiliService } from '../services/BilibiliService';
 import { LogService } from '../services/LogService';
 import { Config } from '../../shared/types/config';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
 
 let notionService: NotionService | null = null;
 let weChatService: WeChatService | null = null;
 let wordPressService: WordPressService | null = null;
+let bilibiliService: BilibiliService | null = null;
 let syncService: SyncService | null = null;
 
 export function setupIpcHandlers(
@@ -17,12 +20,14 @@ export function setupIpcHandlers(
   _notionService: NotionService | null,
   _weChatService: WeChatService | null,
   _syncService: SyncService | null,
-  _wordPressService?: WordPressService | null
+  _wordPressService?: WordPressService | null,
+  _bilibiliService?: BilibiliService | null
 ) {
   notionService = _notionService;
   weChatService = _weChatService;
   syncService = _syncService;
   wordPressService = _wordPressService || null;
+  bilibiliService = _bilibiliService || null;
 
   // 配置相关
   ipcMain.handle('get-config', async () => {
@@ -31,9 +36,6 @@ export function setupIpcHandlers(
 
   ipcMain.handle('show-notification', async (event, { title, body }) => {
     try {
-      console.log('主进程 - 收到显示通知请求');
-      console.log('参数:', { title, body });
-      
       // 尝试使用系统通知
       try {
         const notification = new Notification({
@@ -44,7 +46,6 @@ export function setupIpcHandlers(
         
         notification.show();
       } catch (error) {
-        console.warn('系统通知失败，使用对话框:', error);
         // 使用对话框作为备选
         await dialog.showMessageBox({
           type: 'info',
@@ -63,9 +64,6 @@ export function setupIpcHandlers(
 
   ipcMain.handle('save-config', async (event, config: any) => {
     try {
-      // ⚠️ 安全：不记录包含API密钥的完整配置
-      console.log('收到配置保存请求 - Notion:', !!config.notion?.apiKey, 'WeChat:', !!config.wechat?.appId, 'WordPress:', !!config.wordpress?.siteUrl);
-      
       // 直接使用传入的配置对象
       const configToSave: Config = {
         notion: {
@@ -86,6 +84,19 @@ export function setupIpcHandlers(
           defaultCategory: config.wordpress.defaultCategory,
           defaultAuthor: config.wordpress.defaultAuthor,
           topNotice: config.wordpress.topNotice
+        } : undefined,
+        // Bilibili 配置（可选）
+        bilibili: config.bilibili ? {
+          cookieFile: config.bilibili.cookieFile,
+          defaultTid: config.bilibili.defaultTid,
+          defaultTags: config.bilibili.defaultTags,
+          enabled: config.bilibili.enabled,
+          descTemplate: config.bilibili.descTemplate,
+          copyright: config.bilibili.copyright,
+          noReprint: config.bilibili.noReprint,
+          openElec: config.bilibili.openElec,
+          upCloseReply: config.bilibili.upCloseReply,
+          upCloseDanmu: config.bilibili.upCloseDanmu
         } : undefined
       };
       
@@ -98,27 +109,29 @@ export function setupIpcHandlers(
         throw new Error('微信 AppID 和 AppSecret 不能为空');
       }
       
+      // 保存配置      
       // 保存配置
-      console.log('正在保存配置到文件...');
       await configService.saveConfig(configToSave);
-      console.log('配置已保存到文件');
       
       // 重新初始化服务
-      console.log('正在重新初始化服务...');
       notionService = new NotionService(configToSave.notion);
       weChatService = new WeChatService(configService);
       
       // 初始化 WordPress 服务（如果配置了）
       if (configToSave.wordpress?.siteUrl && configToSave.wordpress?.username && configToSave.wordpress?.appPassword) {
         wordPressService = new WordPressService(configService);
-        console.log('WordPress 服务初始化成功');
       } else {
         wordPressService = null;
-        console.log('WordPress 配置不完整，服务未初始化');
       }
       
-      syncService = new SyncService(notionService, weChatService, configService, wordPressService);
-      console.log('服务重新初始化成功');
+      // 初始化 Bilibili 服务（如果启用了）
+      if (configToSave.bilibili?.enabled) {
+        bilibiliService = new BilibiliService(configService);
+      } else {
+        bilibiliService = null;
+      }
+      
+      syncService = new SyncService(notionService, weChatService, configService, wordPressService, bilibiliService);
       
       return true;
     } catch (error) {
@@ -362,5 +375,122 @@ export function setupIpcHandlers(
       articleId: wpSyncKey,
       status: 'pending'
     };
+  });
+
+  // ==================== Bilibili 相关 ====================
+
+  // 检查 biliup 是否安装 - 允许在服务未初始化时检查
+  ipcMain.handle('check-biliup-installed', async () => {
+    if (!bilibiliService) {
+      // 临时创建服务来检查
+      const { BilibiliService } = await import('../services/BilibiliService');
+      const tempBiliService = new BilibiliService(configService!);
+      return tempBiliService.checkBiliupInstalled();
+    }
+    return bilibiliService.checkBiliupInstalled();
+  });
+
+  // 检查 FFmpeg 是否安装 - 允许在服务未初始化时检查
+  ipcMain.handle('check-ffmpeg-installed', async () => {
+    if (!bilibiliService) {
+      // 临时创建服务来检查
+      const { BilibiliService } = await import('../services/BilibiliService');
+      const tempBiliService = new BilibiliService(configService!);
+      return tempBiliService.checkFFmpegInstalled();
+    }
+    return bilibiliService.checkFFmpegInstalled();
+  });
+
+  // 获取B站用户信息
+  ipcMain.handle('get-bilibili-user', async () => {
+    if (!bilibiliService) {
+      return null;
+    }
+    try {
+      return await bilibiliService.getUserInfo();
+    } catch (error) {
+      LogService.error('获取B站用户信息失败', 'IpcHandlers', error);
+      return null;
+    }
+  });
+
+  // B站登录 - 允许在未启用时也能登录（登录后再启用）
+  ipcMain.handle('bilibili-login', async (event, method: 'qrcode' | 'sms' | 'password' = 'qrcode') => {
+    // 如果服务未初始化，临时创建一个用于登录
+    if (!bilibiliService) {
+      const { BilibiliService } = await import('../services/BilibiliService');
+      const tempBiliService = new BilibiliService(configService!);
+      return tempBiliService.login(method);
+    }
+    return bilibiliService.login(method);
+  });
+
+  // B站退出登录
+  ipcMain.handle('bilibili-logout', async () => {
+    if (!bilibiliService) {
+      const { BilibiliService } = await import('../services/BilibiliService');
+      const tempBiliService = new BilibiliService(configService!);
+      return tempBiliService.logout();
+    }
+    return bilibiliService.logout();
+  });
+
+  // 监听B站同步进度更新（从 BilibiliService 发送）
+  ipcMain.on('bilibili-progress-update', (event, data: { phase: string; progress: number; title: string }) => {
+    // 转发进度更新到所有渲染进程
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('bilibili-sync-progress', data);
+    });
+  });
+
+  // 检查文章是否包含视频
+  ipcMain.handle('check-has-videos', async (event, articleId: string) => {
+    if (!syncService) {
+      return false;
+    }
+    return syncService.hasVideos(articleId);
+  });
+
+  // 同步视频到B站
+  ipcMain.handle('sync-to-bilibili', async (
+    event,
+    articleId: string,
+    metadata: BilibiliMetadata,
+    publishMode: 'draft' | 'publish' = 'draft',
+    autoCompress: boolean = true
+  ) => {
+    if (!syncService) {
+      throw new Error('同步服务未初始化');
+    }
+    if (!bilibiliService) {
+      throw new Error('Bilibili 服务未初始化，请先启用 Bilibili 功能');
+    }
+    return syncService.syncVideoToBilibili(articleId, metadata, publishMode, autoCompress);
+  });
+
+  // 获取 B站 同步状态
+  ipcMain.handle('get-bilibili-sync-status', async (event, articleId: string) => {
+    if (!syncService) {
+      return {
+        articleId: `bili_${articleId}`,
+        status: 'pending',
+        error: '同步服务未初始化'
+      };
+    }
+    const biliSyncKey = `bili_${articleId}`;
+    const state = syncService.getSyncState(biliSyncKey);
+    return state || {
+      articleId: biliSyncKey,
+      status: 'pending'
+    };
+  });
+
+  // 清理 Bilibili 临时文件
+  ipcMain.handle('bilibili-cleanup', async () => {
+    if (!bilibiliService) {
+      return false;
+    }
+    bilibiliService.cleanup();
+    return true;
   });
 } 

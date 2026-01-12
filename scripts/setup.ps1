@@ -111,11 +111,185 @@ if ($electronPath) {
     Write-Host "⚠ Electron 可能未正确安装" -ForegroundColor Yellow
 }
 
+# 检查 B站投稿工具（可选）
+Write-Host ""
+Write-Host "======================================"
+Write-Host "  检查可选工具 (B站投稿功能)"
+Write-Host "======================================"
+Write-Host ""
+
+$needInstall = $false
+$toolsToInstall = @()
+
+# 检查 biliup
+Write-Host "[可选] 检查 biliup-rs..."
+try {
+    $biliupVersion = biliup --version 2>$null
+    Write-Host "        ✓ biliup 已安装: $biliupVersion" -ForegroundColor Green
+} catch {
+    Write-Host "        ✗ biliup 未安装，将自动安装..." -ForegroundColor Yellow
+    $needInstall = $true
+    $toolsToInstall += "biliup"
+}
+
+# 检查 ffmpeg
+Write-Host ""
+Write-Host "[可选] 检查 FFmpeg..."
+try {
+    $ffmpegVersion = ffmpeg -version 2>$null | Select-Object -First 1
+    Write-Host "        ✓ FFmpeg 已安装" -ForegroundColor Green
+} catch {
+    Write-Host "        ✗ FFmpeg 未安装，将自动安装..." -ForegroundColor Yellow
+    $needInstall = $true
+    $toolsToInstall += "FFmpeg"
+}
+
+# 检查 yt-dlp
+Write-Host ""
+Write-Host "[可选] 检查 yt-dlp (下载YouTube/Twitter等视频)..."
+try {
+    $ytdlpVersion = yt-dlp --version 2>$null
+    Write-Host "        ✓ yt-dlp 已安装: $ytdlpVersion" -ForegroundColor Green
+} catch {
+    Write-Host "        ✗ yt-dlp 未安装，将自动安装..." -ForegroundColor Yellow
+    $needInstall = $true
+    $toolsToInstall += "yt-dlp"
+}
+
+# 自动安装缺失的工具
+if ($needInstall) {
+    Write-Host ""
+    Write-Host "正在自动安装 B站投稿工具..." -ForegroundColor Yellow
+    Write-Host ""
+    
+    if ($toolsToInstall -contains "biliup") {
+        Write-Host "  [1/2] 安装 biliup-rs..." -ForegroundColor Cyan
+        try {
+            $output = winget install ForgQi.biliup-rs --silent --accept-package-agreements --accept-source-agreements 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "        ✓ biliup 安装成功" -ForegroundColor Green
+                
+                # 刷新当前会话的 PATH 环境变量
+                $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+                
+                # 验证安装
+                try {
+                    $biliupTest = biliup --version 2>$null
+                    Write-Host "        ✓ 验证成功: $biliupTest" -ForegroundColor Green
+                } catch {
+                    Write-Host "        ⚠ 已安装但需要重启终端才能使用" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "        ⚠ biliup 安装失败（可手动安装）" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "        ⚠ biliup 安装失败（可手动安装）" -ForegroundColor Yellow
+        }
+    }
+    
+    if ($toolsToInstall -contains "FFmpeg") {
+        Write-Host "  [2/3] 安装 FFmpeg..." -ForegroundColor Cyan
+        try {
+            $output = winget install BtbN.FFmpeg.GPL --silent --accept-package-agreements --accept-source-agreements 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "        ✓ FFmpeg 安装成功" -ForegroundColor Green
+                
+                # 刷新当前会话的 PATH 环境变量
+                $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+                
+                # 验证安装
+                try {
+                    $ffmpegTest = ffmpeg -version 2>$null | Select-Object -First 1
+                    Write-Host "        ✓ 验证成功" -ForegroundColor Green
+                } catch {
+                    Write-Host "        ⚠ 已安装但需要重启终端才能使用" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "        ⚠ FFmpeg 安装失败（可手动安装）" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "        ⚠ FFmpeg 安装失败（可手动安装）" -ForegroundColor Yellow
+        }
+    }
+    
+    if ($toolsToInstall -contains "yt-dlp") {
+        Write-Host "  [3/3] 安装 yt-dlp..." -ForegroundColor Cyan
+        try {
+            Write-Host "        正在执行: winget install yt-dlp.yt-dlp" -ForegroundColor DarkGray
+            $output = winget install yt-dlp.yt-dlp --silent --accept-package-agreements --accept-source-agreements 2>&1
+            Write-Host "        安装命令退出码: $LASTEXITCODE" -ForegroundColor DarkGray
+            
+            if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189) {
+                Write-Host "        ✓ yt-dlp 安装成功" -ForegroundColor Green
+                
+                # 刷新当前会话的 PATH 环境变量
+                $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+                
+                # 等待一秒让系统注册
+                Start-Sleep -Seconds 1
+                
+                # 验证安装 - 先检查安装位置
+                $ytdlpLocations = @(
+                    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe",
+                    "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+                    "$env:USERPROFILE\.local\bin"
+                )
+                
+                $foundPath = $null
+                foreach ($location in $ytdlpLocations) {
+                    if (Test-Path "$location\yt-dlp.exe") {
+                        $foundPath = $location
+                        Write-Host "        找到 yt-dlp.exe: $foundPath" -ForegroundColor DarkGray
+                        break
+                    }
+                }
+                
+                # 验证安装
+                try {
+                    $ytdlpTest = yt-dlp --version 2>$null
+                    Write-Host "        ✓ 验证成功: $ytdlpTest" -ForegroundColor Green
+                } catch {
+                    if ($foundPath) {
+                        Write-Host "        ⚠ 已安装在 $foundPath 但需要重启终端才能使用" -ForegroundColor Yellow
+                    } else {
+                        Write-Host "        ⚠ 已安装但需要重启终端才能使用" -ForegroundColor Yellow
+                    }
+                }
+            } else {
+                Write-Host "        ⚠ yt-dlp 安装失败（退出码: $LASTEXITCODE）" -ForegroundColor Yellow
+                Write-Host "        输出: $output" -ForegroundColor DarkGray
+            }
+        } catch {
+            Write-Host "        ⚠ yt-dlp 安装失败: $_" -ForegroundColor Yellow
+        }
+    }
+    
+    Write-Host ""
+    Write-Host "✓ B站投稿工具安装完成" -ForegroundColor Green
+    Write-Host "  ⚠ 重要：请【关闭并重新打开】所有终端和应用程序，让 PATH 环境变量生效" -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "✓ 所有B站工具已就绪" -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "======================================"
 Write-Host "  安装完成！"
 Write-Host "======================================"
 Write-Host ""
+
+# 检查是否安装了新工具
+$installedNewTools = ($toolsToInstall.Count -gt 0) -and $needInstall
+if ($installedNewTools) {
+    Write-Host "⚠️  重要提示：已安装新的命令行工具（biliup/ffmpeg/yt-dlp）" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "   请执行以下步骤使工具生效：" -ForegroundColor Yellow
+    Write-Host "   1. 【关闭】当前所有终端窗口" -ForegroundColor Cyan
+    Write-Host "   2. 【关闭】NotionSyncOne 应用（如果正在运行）" -ForegroundColor Cyan
+    Write-Host "   3. 【重新打开】终端和应用" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 Write-Host "可用命令："
 Write-Host "  pnpm dev        - 启动开发服务器"
 Write-Host "  pnpm build      - 构建生产版本"
@@ -123,4 +297,11 @@ Write-Host ""
 Write-Host "或使用脚本："
 Write-Host "  .\scripts\dev.cmd    - 启动开发服务器"
 Write-Host "  .\scripts\build.cmd  - 构建生产版本"
+Write-Host ""
+
+if ($installedNewTools) {
+    Write-Host "💡 提示：B站投稿功能需要在重启应用后，在设置中启用" -ForegroundColor Cyan
+} else {
+    Write-Host "提示：如需使用B站投稿功能，请在应用设置中启用" -ForegroundColor Cyan
+}
 Write-Host ""

@@ -76,6 +76,15 @@ userData/
 user-data/
 %APPDATA%/
 
+# Bilibili Cookie（安全重要！）
+**/cookies.json
+**/bilibili-cookies.json
+temp/**/cookies.json
+
+# 临时文件和缓存
+**/notionsyncone-bilibili/
+**/notionsyncone-temp/
+
 # 备份文件
 *.bak
 *.backup

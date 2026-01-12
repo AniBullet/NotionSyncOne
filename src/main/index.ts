@@ -4,6 +4,7 @@ import { ConfigService } from './services/ConfigService';
 import { NotionService } from './services/NotionService';
 import { WeChatService } from './services/WeChatService';
 import { WordPressService } from './services/WordPressService';
+import { BilibiliService } from './services/BilibiliService';
 import { SyncService } from './services/SyncService';
 import { setupIpcHandlers } from './ipc/handlers';
 
@@ -30,6 +31,7 @@ let configService: ConfigService | null = null;
 let notionService: NotionService | null = null;
 let weChatService: WeChatService | null = null;
 let wordPressService: WordPressService | null = null;
+let bilibiliService: BilibiliService | null = null;
 let syncService: SyncService | null = null;
 
 // 初始化服务
@@ -40,10 +42,12 @@ async function initServices() {
     await configService.init(); // 确保配置已加载
     const notionConfig = configService.getNotionConfig();
     const wpConfig = configService.getWordPressConfig();
+    const biliConfig = configService.getBilibiliConfig();
     
     // ⚠️ 安全：不记录包含API key的配置信息
     console.log('配置加载状态: apiKey已配置:', !!notionConfig.apiKey, ', databaseId已配置:', !!notionConfig.databaseId);
     console.log('WordPress 配置状态: siteUrl已配置:', !!wpConfig?.siteUrl, ', username已配置:', !!wpConfig?.username);
+    console.log('Bilibili 配置状态: enabled:', !!biliConfig?.enabled);
     
     // 初始化 Notion 服务
     if (notionConfig.apiKey && notionConfig.databaseId) {
@@ -59,7 +63,15 @@ async function initServices() {
           console.log('WordPress 配置未完成，服务未初始化');
         }
         
-        syncService = new SyncService(notionService, weChatService, configService, wordPressService);
+        // 初始化 Bilibili 服务（如果启用了）
+        if (biliConfig?.enabled) {
+          bilibiliService = new BilibiliService(configService);
+          console.log('Bilibili 服务初始化成功');
+        } else {
+          console.log('Bilibili 未启用，服务未初始化');
+        }
+        
+        syncService = new SyncService(notionService, weChatService, configService, wordPressService, bilibiliService);
         console.log('服务初始化成功');
       } catch (error) {
         console.error('服务初始化失败:', error);
@@ -88,6 +100,8 @@ async function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      minWidth: 900,   // 最小宽度：确保界面不会过于拥挤
+      minHeight: 650,  // 最小高度：确保所有内容可见
       title: 'NotionSyncOne',
       icon: iconPath,
       webPreferences: {
@@ -135,8 +149,8 @@ async function createWindow() {
     
     // 隐藏菜单栏
     Menu.setApplicationMenu(null);
-    
-    // 开发者工具（调试时启用）
+
+    // 开发者工具（开发模式下自动打开）
     if (isDev) {
       mainWindow.webContents.openDevTools();
     }
@@ -154,6 +168,8 @@ ipcMain.handle('open-notion-url', async (_event, url: string) => {
     const notionWindow = new BrowserWindow({
       width: 1100,
       height: 800,
+      minWidth: 800,   // Notion预览窗口最小宽度
+      minHeight: 600,  // Notion预览窗口最小高度
       title: 'Notion 预览',
       icon: iconPath,
       parent: mainWindow ?? undefined,
@@ -191,7 +207,7 @@ app.whenReady().then(async () => {
   
   // 设置 IPC 处理器
   if (configService) {
-    setupIpcHandlers(configService, notionService, weChatService, syncService, wordPressService);
+    setupIpcHandlers(configService, notionService, weChatService, syncService, wordPressService, bilibiliService);
     
     // 检查并重置卡住的同步状态
     if (syncService) {

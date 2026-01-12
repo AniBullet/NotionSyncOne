@@ -1,11 +1,13 @@
 import { NotionService } from './NotionService';
 import { WeChatService } from './WeChatService';
 import { WordPressService } from './WordPressService';
+import { BilibiliService } from './BilibiliService';
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { NotionPage, NotionBlock } from '../../shared/types/notion';
 import { WeChatArticle } from '../../shared/types/wechat';
 import { WordPressArticle } from '../../shared/types/wordpress';
+import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import { themes, ThemeStyles } from '../../shared/types/theme';
@@ -21,6 +23,7 @@ export class SyncService {
   private notionService: NotionService;
   private weChatService: WeChatService;
   private wordPressService: WordPressService | null = null;
+  private bilibiliService: BilibiliService | null = null;
   private configService: ConfigService;
   private syncStates: { [key: string]: SyncState } = {};
   private syncStateFile: string;
@@ -31,12 +34,14 @@ export class SyncService {
     notionService: NotionService, 
     weChatService: WeChatService, 
     configService: ConfigService,
-    wordPressService?: WordPressService | null
+    wordPressService?: WordPressService | null,
+    bilibiliService?: BilibiliService | null
   ) {
     this.notionService = notionService;
     this.weChatService = weChatService;
     this.configService = configService;
     this.wordPressService = wordPressService || null;
+    this.bilibiliService = bilibiliService || null;
     this.syncStateFile = path.join(app.getPath('userData'), 'sync-states.json');
     this.loadSyncStates();
   }
@@ -53,6 +58,20 @@ export class SyncService {
    */
   getWordPressService(): WordPressService | null {
     return this.wordPressService;
+  }
+
+  /**
+   * 设置 Bilibili 服务（用于后续初始化）
+   */
+  setBilibiliService(service: BilibiliService | null): void {
+    this.bilibiliService = service;
+  }
+
+  /**
+   * 获取 Bilibili 服务
+   */
+  getBilibiliService(): BilibiliService | null {
+    return this.bilibiliService;
   }
 
   /**
@@ -1518,7 +1537,7 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       return '';
     }
 
-    // 使用表格格式，与微信保持一致的风格
+    // 使用表格格式,与微信保持一致的风格
     return `<div class="article-meta" style="margin: 0 0 20px 0; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #0073aa; border-radius: 4px;">
   <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.6;">
     <tbody>
@@ -1526,5 +1545,133 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     </tbody>
   </table>
 </div>`;
+  }
+
+  /**
+   * 同步视频到B站
+   */
+  async syncVideoToBilibili(
+    articleId: string,
+    metadata: BilibiliMetadata,
+    publishMode: 'draft' | 'publish' = 'draft',
+    autoCompress: boolean = true
+  ): Promise<SyncState> {
+    const biliSyncKey = `bili_${articleId}`;
+    
+    LogService.log('========== syncVideoToBilibili 被调用 ==========', 'SyncService');
+    LogService.log(`  - articleId: ${articleId}`, 'SyncService');
+    LogService.log(`  - publishMode: ${publishMode}`, 'SyncService');
+    LogService.log(`  - metadata.title: ${metadata?.title}`, 'SyncService');
+    LogService.log(`  - metadata.tid: ${metadata?.tid}`, 'SyncService');
+    LogService.log(`  - metadata.tags: [${(metadata?.tags || []).join(', ')}]`, 'SyncService');
+    
+    try {
+      if (!this.bilibiliService) {
+        throw new Error('Bilibili 服务未初始化');
+      }
+
+      // 创建 AbortController 用于取消
+      const abortController = new AbortController();
+      this.activeSyncControllers.set(biliSyncKey, abortController);
+
+      LogService.log('========== SyncService: 开始同步视频到B站 ==========', 'SyncService');
+      this.updateSyncState(biliSyncKey, SyncStatus.SYNCING);
+
+      // 1. 获取文章页面
+      const page = await this.notionService.getPageProperties(articleId);
+      LogService.log(`文章标题: ${page.title}`, 'SyncService');
+
+      // 2. 从 Notion 获取文章来源（与微信同步保持一致）
+      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+      if (linkStart) {
+        LogService.log(`文章来源: ${linkStart}`, 'SyncService');
+        // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
+        if (!metadata.source) {
+          metadata.source = linkStart;
+        }
+      }
+
+      // 3. 提取视频
+      LogService.log('正在提取视频...', 'SyncService');
+      const videoInfos = await this.notionService.extractVideos(articleId);
+      
+      if (videoInfos.length === 0) {
+        throw new Error('文章中没有找到视频');
+      }
+
+      LogService.log(`找到 ${videoInfos.length} 个视频`, 'SyncService');
+
+      // 4. 下载视频
+      const videos: BilibiliVideo[] = [];
+      for (let i = 0; i < videoInfos.length; i++) {
+        const videoInfo = videoInfos[i];
+        LogService.log(`正在下载视频 ${i + 1}/${videoInfos.length}...`, 'SyncService');
+        
+        const video: BilibiliVideo = {
+          url: videoInfo.url,
+          caption: videoInfo.caption,
+          type: videoInfo.type
+        };
+
+        const localPath = await this.bilibiliService.downloadVideo(
+          video,
+          abortController.signal,
+          articleId  // 传递 articleId 用于进度追踪
+        );
+        
+        video.localPath = localPath;
+        videos.push(video);
+      }
+
+      // 5. 准备上传选项
+      const uploadOptions: BilibiliUploadOptions = {
+        publishMode,
+        metadata,
+        videos,
+        autoCompress,
+        compressionQuality: 23,
+        articleId  // 添加 articleId 用于进度追踪
+      };
+
+      // 5. 上传到B站
+      LogService.log(`开始上传到B站，模式: ${publishMode}`, 'SyncService');
+      const result = await this.bilibiliService.uploadVideo(
+        uploadOptions,
+        abortController.signal
+      );
+
+      LogService.success('========== B站同步成功 ==========', 'SyncService');
+      if (result.link) {
+        LogService.log(`稿件链接: ${result.link}`, 'SyncService');
+      }
+
+      // 清理控制器
+      this.activeSyncControllers.delete(biliSyncKey);
+
+      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS);
+      return successState;
+    } catch (error) {
+      LogService.error('========== B站同步失败 ==========', 'SyncService');
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      LogService.error(`错误: ${errorMessage}`, 'SyncService');
+      
+      // 清理控制器
+      this.activeSyncControllers.delete(biliSyncKey);
+      
+      const failedState = this.updateSyncState(biliSyncKey, SyncStatus.FAILED, errorMessage);
+      return failedState;
+    }
+  }
+
+  /**
+   * 检查文章是否包含视频
+   */
+  async hasVideos(articleId: string): Promise<boolean> {
+    try {
+      return await this.notionService.hasVideos(articleId);
+    } catch (error) {
+      LogService.error('检查视频失败', 'SyncService');
+      return false;
+    }
   }
 } 

@@ -351,4 +351,71 @@ export class NotionService {
       throw error;
     }
   }
+
+  /**
+   * 提取页面中的视频块
+   */
+  async extractVideos(pageId: string): Promise<Array<{
+    id: string;
+    url: string;
+    caption: string;
+    type: 'uploaded' | 'external';
+  }>> {
+    try {
+      if (!this.client) {
+        throw new Error('Notion 客户端未初始化');
+      }
+
+      logger.log('开始提取视频块...');
+      const blocks = await this.getPageContent(pageId);
+      
+      const videos = blocks
+        .filter(block => block.type === 'video')
+        .map(block => {
+          const url = block.content.url || '';
+          const caption = block.content.caption?.[0]?.plain_text || '';
+          
+          // 判断视频类型
+          let type: 'uploaded' | 'external' = 'external';
+          if (url.includes('notion.so') || url.includes('s3')) {
+            type = 'uploaded';
+          }
+          
+          return {
+            id: block.id,
+            url,
+            caption,
+            type
+          };
+        })
+        .filter(video => video.url); // 过滤掉没有URL的视频块
+
+      logger.log(`找到 ${videos.length} 个视频块`);
+      
+      videos.forEach((video, index) => {
+        logger.log(`视频 ${index + 1}: ${video.type} - ${video.url.substring(0, 60)}...`);
+        if (video.caption) {
+          logger.log(`  说明: ${video.caption}`);
+        }
+      });
+
+      return videos;
+    } catch (error: any) {
+      logger.error('提取视频块失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 检查页面是否包含视频
+   */
+  async hasVideos(pageId: string): Promise<boolean> {
+    try {
+      const videos = await this.extractVideos(pageId);
+      return videos.length > 0;
+    } catch (error) {
+      logger.error('检查视频失败:', error);
+      return false;
+    }
+  }
 } 

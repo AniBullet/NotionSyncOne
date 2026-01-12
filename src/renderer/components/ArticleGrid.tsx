@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
-import { SyncTarget } from './SyncButton';
 
 // 封面图
 const CoverImage: React.FC<{ coverUrl?: string; title: string }> = ({ coverUrl, title }) => {
@@ -39,155 +38,52 @@ interface ArticleGridProps {
   error: string | null;
   syncStates: Record<string, SyncState>;
   wpSyncStates: Record<string, SyncState>;
+  biliSyncStates: Record<string, SyncState>;
+  biliProgress: Record<string, { phase: string; progress: number }>;
   hasWordPressConfig: boolean;
-  onSync: (articleId: string, target: SyncTarget, mode: 'publish' | 'draft') => void;
-  onBatchSync?: (articleIds: string[], target: SyncTarget, mode: 'publish' | 'draft') => void;
-  onCancelSync?: (articleId: string, target: SyncTarget) => void;
+  hasBilibiliConfig: boolean;
+  selectedArticles: Set<string>;
+  onToggleArticle: (id: string) => void;
+  onPreview?: (articleId: string) => void;
 }
 
-// 操作按钮
-const Actions: React.FC<{
+// 同步状态徽章（显示在卡片上）
+const SyncBadges: React.FC<{
   wechatState?: SyncState;
   wpState?: SyncState;
-  hasWp: boolean;
-  onSync: (target: SyncTarget, mode: 'publish' | 'draft') => void;
-  onCancel?: (target: SyncTarget) => void;
-}> = ({ wechatState, wpState, hasWp, onSync, onCancel }) => {
-  const [menu, setMenu] = useState<string | null>(null);
-  const wxSyncing = wechatState?.status === SyncStatus.SYNCING;
-  const wpSyncing = wpState?.status === SyncStatus.SYNCING;
-
-  const statusColor = (s?: SyncState) => {
-    if (s?.status === SyncStatus.SUCCESS) return '#10B981';
-    if (s?.status === SyncStatus.FAILED) return '#EF4444';
-    if (s?.status === SyncStatus.SYNCING) return '#F59E0B';
-    return undefined;
-  };
-
-  const statusIcon = (s?: SyncState, def: string = '') => {
-    if (s?.status === SyncStatus.SYNCING) return '···';
-    if (s?.status === SyncStatus.SUCCESS) return '✓';
-    if (s?.status === SyncStatus.FAILED) return '!';
-    return def;
-  };
-
-  const handleClick = (target: SyncTarget, isSyncing: boolean, menuKey: string) => {
-    if (isSyncing) {
-      // 正在同步，点击取消
-      onCancel?.(target);
-    } else {
-      setMenu(menu === menuKey ? null : menuKey);
-    }
-  };
-
-  const btn: React.CSSProperties = {
-    height: '22px',
-    padding: '0 8px',
-    borderRadius: '4px',
-    border: 'none',
-    backgroundColor: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-    fontSize: '11px',
-    cursor: 'pointer',
-    transition: 'all 100ms',
-    fontWeight: '500',
-    whiteSpace: 'nowrap',
-    lineHeight: '22px',
-    flexShrink: 0
-  };
-
-  const dropdown: React.CSSProperties = {
-    position: 'absolute',
-    bottom: '100%',
-    right: 0,
-    marginBottom: '3px',
-    backgroundColor: 'var(--bg-primary)',
-    border: '1px solid var(--border-light)',
-    borderRadius: '6px',
-    boxShadow: '0 -3px 12px rgba(0,0,0,0.12)',
-    zIndex: 1000,
-    overflow: 'hidden',
-    minWidth: '72px',
-    whiteSpace: 'nowrap'
-  };
-
-  const item: React.CSSProperties = {
-    display: 'block',
-    width: '100%',
-    padding: '7px 12px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: 'var(--text-primary)',
-    fontSize: '12px',
-    cursor: 'pointer',
-    textAlign: 'left'
-  };
-
-  const syncBoth = (mode: 'publish' | 'draft') => {
-    onSync('wechat', mode);
-    if (hasWp) onSync('wordpress', mode);
-    setMenu(null);
+  biliState?: SyncState;
+}> = ({ wechatState, wpState, biliState }) => {
+  const getBadge = (state: SyncState | undefined, icon: string, title: string) => {
+    if (!state) return null;
+    
+    let color = 'var(--text-tertiary)';
+    if (state.status === SyncStatus.SUCCESS) color = '#10B981';
+    else if (state.status === SyncStatus.FAILED) color = '#EF4444';
+    else if (state.status === SyncStatus.SYNCING) color = '#F59E0B';
+    
+    return (
+      <div 
+        key={title}
+        style={{ 
+          padding: '2px 6px', 
+          borderRadius: '4px',
+          backgroundColor: state.status === SyncStatus.SUCCESS ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
+          fontSize: '10px',
+          color,
+          fontWeight: '500'
+        }}
+        title={`${title}: ${state.status === SyncStatus.SUCCESS ? '已同步' : state.status === SyncStatus.FAILED ? '失败' : '同步中...'}`}
+      >
+        {icon}
+      </div>
+    );
   };
 
   return (
-    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-      <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => handleClick('wechat', wxSyncing, 'wx')}
-          style={{ ...btn, color: statusColor(wechatState) || btn.color, opacity: wxSyncing ? 0.8 : 1 }}
-          title={wxSyncing ? '点击取消同步' : '微信'}
-        >{statusIcon(wechatState, '微信')}</button>
-        {menu === 'wx' && (
-          <div style={dropdown} onMouseLeave={() => setMenu(null)}>
-            <button style={item} onClick={() => { setMenu(null); onSync('wechat', 'draft'); }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>存草稿</button>
-            <button style={item} onClick={() => { setMenu(null); onSync('wechat', 'publish'); }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>发布</button>
-          </div>
-        )}
-      </div>
-
-      {hasWp && (
-        <>
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => handleClick('wordpress', wpSyncing, 'wp')}
-              style={{ ...btn, color: statusColor(wpState) || btn.color, opacity: wpSyncing ? 0.8 : 1 }}
-              title={wpSyncing ? '点击取消同步' : 'WordPress'}
-            >{statusIcon(wpState, 'WP')}</button>
-            {menu === 'wp' && (
-              <div style={dropdown} onMouseLeave={() => setMenu(null)}>
-                <button style={item} onClick={() => { setMenu(null); onSync('wordpress', 'draft'); }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>存草稿</button>
-                <button style={item} onClick={() => { setMenu(null); onSync('wordpress', 'publish'); }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>发布</button>
-              </div>
-            )}
-          </div>
-
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => !(wxSyncing || wpSyncing) && setMenu(menu === 'both' ? null : 'both')}
-              style={{ ...btn, border: '1px solid rgba(16,185,129,0.4)', color: 'var(--primary-green)', opacity: (wxSyncing || wpSyncing) ? 0.5 : 1 }}
-              title="同时同步"
-            >全</button>
-            {menu === 'both' && (
-              <div style={dropdown} onMouseLeave={() => setMenu(null)}>
-                <button style={item} onClick={() => syncBoth('draft')}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>全部存草稿</button>
-                <button style={item} onClick={() => syncBoth('publish')}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>全部发布</button>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      {getBadge(wechatState, '💬', '微信')}
+      {getBadge(wpState, 'WP', 'WordPress')}
+      {getBadge(biliState, '📹', 'B站')}
     </div>
   );
 };
@@ -255,26 +151,20 @@ const ContextMenu: React.FC<{
 };
 
 const ArticleGrid: React.FC<ArticleGridProps> = ({
-  articles, loading, error, syncStates, wpSyncStates, hasWordPressConfig, onSync, onBatchSync, onCancelSync
+  articles,
+  loading,
+  error,
+  syncStates,
+  wpSyncStates,
+  biliSyncStates,
+  biliProgress,
+  hasWordPressConfig,
+  hasBilibiliConfig,
+  selectedArticles,
+  onToggleArticle,
+  onPreview
 }) => {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [batchMenu, setBatchMenu] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; url?: string } | null>(null);
-
-  const toggle = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const batch = (target: SyncTarget, mode: 'publish' | 'draft') => {
-    if (selected.size > 0) {
-      onBatchSync?.(Array.from(selected), target, mode);
-      setBatchMenu(null);
-    }
-  };
 
   const handleContextMenu = (e: React.MouseEvent, url?: string) => {
     e.preventDefault();
@@ -298,56 +188,17 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
         />
       )}
 
-      {/* 批量操作栏 */}
-      {selected.size > 0 && (
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 50,
-          padding: '10px 20px',
-          backgroundColor: 'var(--bg-primary)',
-          borderBottom: '1px solid var(--border-light)',
-          display: 'flex', alignItems: 'center', gap: '12px',
-          fontSize: '13px'
-        }}>
-          <span style={{ color: 'var(--text-secondary)' }}>已选 <b style={{ color: 'var(--primary-green)' }}>{selected.size}</b> 篇</span>
-          <div style={{ flex: 1 }} />
-          
-          {['wechat', 'wordpress'].map(t => (
-            (t === 'wechat' || hasWordPressConfig) && (
-              <div key={t} style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setBatchMenu(batchMenu === t ? null : t)}
-                  style={{ padding: '5px 12px', borderRadius: '5px', border: '1px solid var(--border-medium)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}
-                >{t === 'wechat' ? '微信同步' : 'WP同步'}</button>
-                {batchMenu === t && (
-                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-light)', borderRadius: '6px', boxShadow: '0 3px 12px rgba(0,0,0,0.12)', zIndex: 100, overflow: 'hidden', whiteSpace: 'nowrap' }} onMouseLeave={() => setBatchMenu(null)}>
-                    <button style={{ display: 'block', width: '100%', padding: '8px 14px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap' }}
-                      onClick={() => batch(t === 'wechat' ? 'wechat' : 'wordpress', 'draft')}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>批量存草稿</button>
-                    <button style={{ display: 'block', width: '100%', padding: '8px 14px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap' }}
-                      onClick={() => batch(t === 'wechat' ? 'wechat' : 'wordpress', 'publish')}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>批量发布</button>
-                  </div>
-                )}
-              </div>
-            )
-          ))}
-          
-          <button onClick={() => setSelected(new Set())} style={{ padding: '5px 10px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-tertiary)', fontSize: '12px', cursor: 'pointer' }}>取消选择</button>
-        </div>
-      )}
-
       {/* 卡片网格 */}
       <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '18px' }}>
         {articles.map(article => {
           const cover = article.cover?.type === 'external' ? article.cover.external?.url : article.cover?.file?.url;
-          const sel = selected.has(article.id);
+          const sel = selectedArticles.has(article.id);
+          const progress = biliProgress[article.id];
 
           return (
             <div
               key={article.id}
-              onClick={() => toggle(article.id)}
+              onClick={() => onToggleArticle(article.id)}
               onContextMenu={e => handleContextMenu(e, article.url)}
               style={{
                 backgroundColor: 'var(--bg-primary)',
@@ -357,12 +208,35 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
                 cursor: 'pointer',
                 transition: 'all 180ms ease',
                 transform: sel ? 'scale(0.98)' : 'scale(1)',
-                boxShadow: sel ? '0 0 0 3px rgba(16,185,129,0.15)' : 'none'
+                boxShadow: sel ? '0 0 0 3px rgba(16,185,129,0.15)' : 'none',
+                position: 'relative'
               }}
               onMouseEnter={e => { if (!sel) { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-3px)'; }}}
               onMouseLeave={e => { if (!sel) { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'scale(1)'; }}}
             >
               <CoverImage coverUrl={cover} title={article.title} />
+              
+              {/* B站同步进度条 - 在封面图和内容交界处 */}
+              {progress && progress.progress > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '160px',
+                  left: 0,
+                  right: 0,
+                  height: '2px',
+                  backgroundColor: 'rgba(0,0,0,0.1)',
+                  overflow: 'hidden',
+                  zIndex: 1
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${progress.progress}%`,
+                    backgroundColor: progress.phase === 'downloading' ? '#3B82F6' : '#10B981',
+                    transition: 'width 0.3s ease',
+                    boxShadow: '0 0 4px currentColor'
+                  }} />
+                </div>
+              )}
               
               <div style={{ padding: '12px' }}>
                 <div style={{ height: '40px', display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
@@ -385,12 +259,10 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
                     {new Date(article.lastEditedTime).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
                     {article.author && <> · {article.author}</>}
                   </span>
-                  <Actions
+                  <SyncBadges
                     wechatState={syncStates[article.id]}
                     wpState={wpSyncStates[article.id]}
-                    hasWp={hasWordPressConfig}
-                    onSync={(t, m) => onSync(article.id, t, m)}
-                    onCancel={(t) => onCancelSync?.(article.id, t)}
+                    biliState={biliSyncStates[article.id]}
                   />
                 </div>
               </div>

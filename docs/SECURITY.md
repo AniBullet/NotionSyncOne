@@ -1,60 +1,172 @@
-# 🔒 安全说明
+# 安全与隐私说明
 
-## 隐私与数据保护
+## 🔒 数据安全
 
-### ✅ 已实施的安全措施
+NotionSyncOne 非常重视您的数据安全和隐私保护。
 
-本项目实施了以下安全措施来保护您的敏感信息：
+### 本地存储
 
-1. **本地存储加密配置**
-   - 所有 API 密钥（Notion API Key、WeChat AppID/AppSecret、WordPress 应用密码）存储在本地配置文件中
-   - 配置文件路径：`%APPDATA%/notionsyncone/config/config.json`
-   - 该目录已被 `.gitignore` 排除，不会被提交到代码仓库
+所有敏感信息都存储在您的本地计算机上：
 
-2. **日志安全（已优化）**
-   - ✅ 实施日志级别控制 - 生产环境自动禁用调试日志
-   - ✅ 所有日志输出已经过滤，不会记录完整的 API 密钥、Token 或敏感配置
-   - ✅ 日志仅显示配置状态（已配置/未配置），不显示实际值
-   - ✅ 使用环境变量控制：开发模式显示详细日志，生产模式最小化输出
+**配置文件位置**：
+- Windows: `C:\Users\您的用户名\AppData\Roaming\notionsyncone\config\config.json`
+- macOS: `~/Library/Application Support/notionsyncone/config/config.json`
+- Linux: `~/.config/notionsyncone/config/config.json`
 
-3. **网络请求**
-   - API 密钥仅用于与官方 API 通信（Notion API、WeChat API、WordPress REST API）
-   - 不会将密钥发送到任何第三方服务器
-   - 所有网络请求使用 HTTPS 加密传输
+**B站 Cookie 位置**：
+- 临时目录: `系统临时目录/notionsyncone-bilibili/cookies.json`
 
-### 最佳实践建议
+### 加密存储 🔐
 
-1. **定期更换密钥**
-   - 建议定期更换 API 密钥以增强安全性
-   - 在 Notion、微信公众平台和 WordPress 的设置中可以重新生成密钥
+从 v1.1.0 开始，NotionSyncOne 使用 **系统级加密** 保护敏感配置：
 
-2. **限制权限**
-   - Notion Integration 仅授权访问必要的数据库
-   - 微信公众号 API 权限设置为最小必需权限
-   - WordPress 应用密码仅授予必要的权限
+**加密技术**：
+- **Windows**: DPAPI (Data Protection API)
+- **macOS**: Keychain Services
+- **Linux**: libsecret / gnome-keyring
 
-3. **保护配置文件**
-   - 不要将配置文件分享给他人
-   - 如果需要备份，请加密存储
-   - 如果怀疑密钥泄露，请立即更换
+**加密的字段**：
+- ✅ Notion API Key
+- ✅ 微信公众号 AppId & AppSecret
+- ✅ WordPress 应用密码
 
-## 报告安全问题
+**安全特性**：
+- 🔒 只有当前用户在当前电脑上才能解密
+- 🔒 配置文件即使泄露也无法被他人读取
+- 🔒 自动迁移：首次运行时会自动加密旧配置
+- 🔒 完全透明：使用时无需手动加密/解密
 
-如果您发现任何安全漏洞，请通过以下方式联系：
+**配置文件示例**（加密后）：
+```json
+{
+  "notion": {
+    "apiKey": "[encrypted]AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA...",
+    "databaseId": "12345678-1234-1234-1234-123456789abc"
+  },
+  "wechat": {
+    "appId": "[encrypted]AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA...",
+    "appSecret": "[encrypted]AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA..."
+  }
+}
+```
 
-- GitHub Issues: [https://github.com/AniBullet/NotionSyncOne/issues](https://github.com/AniBullet/NotionSyncOne/issues)
-- 请在问题标题中标注 `[Security]` 前缀
+> ⚠️ **注意**：以上为示例数据，请勿使用真实配置作为文档示例
 
-我们会尽快响应并修复安全问题。
+### 存储的敏感信息
 
-## 更新日志
+1. **Notion API Key** - 用于访问您的 Notion 数据（✅ 已加密）
+2. **微信公众号密钥** - AppId 和 AppSecret（✅ 已加密）
+3. **WordPress 应用密码** - 用于 REST API 访问（✅ 已加密）
+4. **B站登录 Cookie** - 通过 biliup 工具管理（⚠️ 文件权限保护）
 
-### 2025-01-02
-- ✅ 添加 WordPress REST API 支持
-- ✅ 更新配置路径说明
+### 安全措施
 
-### 2025-12-01
-- ✅ 移除所有可能泄露 API 密钥的日志输出
-- ✅ 实施配置文件本地加密存储
-- ✅ 添加 `.gitignore` 规则保护配置目录
-- ✅ 优化日志输出，仅显示配置状态
+✅ **系统级加密** - 敏感配置使用操作系统提供的加密服务
+✅ **本地存储** - 所有敏感数据仅存储在本地
+✅ **不上传到云端** - 配置文件不会上传到任何服务器
+✅ **文件权限** - Cookie 文件设置为仅当前用户可读写（chmod 600）
+✅ **日志脱敏** - 日志中不输出完整的 API Key 或密码
+✅ **Git 忽略** - `.gitignore` 已配置忽略所有敏感文件
+✅ **自动迁移** - 旧的明文配置会自动升级到加密存储
+
+### 不安全的操作
+
+❌ **不要**将配置文件分享给他人
+❌ **不要**将配置文件提交到 Git 仓库
+❌ **不要**在公共场所展示配置界面
+❌ **不要**截图包含 API Key 的界面
+
+### 第三方工具
+
+**biliup-rs**：
+- 开源工具，代码可审计
+- Cookie 本地存储
+- 不会上传任何数据到非B站服务器
+- 项目地址: https://github.com/biliup/biliup
+
+**FFmpeg**：
+- 开源视频处理工具
+- 仅用于本地视频压缩
+- 不涉及网络传输
+
+### API 密钥安全
+
+#### Notion API Key
+- 仅用于访问您授权的 Notion 数据库
+- 不会发送到 Notion 以外的服务器
+- 建议定期更换
+
+#### 微信公众号密钥
+- 仅用于调用微信公众平台 API
+- 不会发送到微信以外的服务器
+- 妥善保管，避免泄露
+
+#### WordPress 应用密码
+- 建议使用应用密码而非主账号密码
+- 可随时在 WordPress 后台撤销
+- 不会被明文存储在日志中
+
+#### B站账号
+- 通过 biliup 官方登录流程
+- Cookie 本地加密存储
+- 不会被上传到第三方服务器
+
+### 审计和日志
+
+应用日志位置：
+- Windows: `C:\Users\您的用户名\AppData\Roaming\notionsyncone\logs\`
+- macOS: `~/Library/Application Support/notionsyncone/logs/`
+- Linux: `~/.config/notionsyncone/logs/`
+
+日志中**不包含**：
+- ❌ 完整的 API Key
+- ❌ 密码明文
+- ❌ Cookie 内容
+- ❌ 用户个人信息
+
+日志中**包含**：
+- ✅ 操作记录（如同步开始/结束）
+- ✅ 错误信息（已脱敏）
+- ✅ 文章标题和 ID
+- ✅ 同步状态
+
+### 如果怀疑密钥泄露
+
+如果您怀疑密钥已泄露，请立即：
+
+1. **Notion API Key**：
+   - 前往 https://www.notion.so/my-integrations
+   - 撤销或重新生成 API Key
+
+2. **微信公众号**：
+   - 登录微信公众平台
+   - 重置 AppSecret
+
+3. **WordPress**：
+   - 登录 WordPress 后台
+   - 撤销应用密码并重新生成
+
+4. **B站账号**：
+   - 删除本地 Cookie 文件
+   - 重新登录
+
+### 开源透明
+
+NotionSyncOne 是开源软件：
+- 源代码公开可审计
+- 不包含任何后门或追踪代码
+- 不会收集用户隐私数据
+- 不会向第三方发送数据
+
+项目地址: https://github.com/AniBullet/NotionSyncOne
+
+### 联系方式
+
+如发现安全漏洞，请通过以下方式报告：
+- GitHub Issues: https://github.com/AniBullet/NotionSyncOne/issues
+- 标题标注: [SECURITY]
+
+---
+
+**最后更新**: 2026-01-12  
+**版本**: v1.1.0

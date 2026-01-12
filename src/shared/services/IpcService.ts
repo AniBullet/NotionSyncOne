@@ -200,4 +200,46 @@ export class IpcService {
   static async getWordPressSyncStatus(articleId: string): Promise<SyncState> {
     return window.electron.ipcRenderer.invoke('get-wp-sync-status', articleId);
   }
+
+  // ==================== Bilibili 相关方法 ====================
+
+  /**
+   * B站登录（Electron窗口扫码）
+   */
+  static async bilibiliLogin(): Promise<void> {
+    return window.electron.ipcRenderer.invoke('bilibili-login');
+  }
+
+  /**
+   * B站退出登录
+   */
+  static async bilibiliLogout(): Promise<void> {
+    return window.electron.ipcRenderer.invoke('bilibili-logout');
+  }
+
+  /**
+   * 同步视频到 B站
+   */
+  static async syncToBilibili(
+    articleId: string,
+    metadata: any,
+    publishMode: 'draft' | 'publish' = 'draft',
+    autoCompress: boolean = true
+  ): Promise<SyncState> {
+    return window.electron.ipcRenderer.invoke('sync-to-bilibili', articleId, metadata, publishMode, autoCompress);
+  }
+
+  /**
+   * 获取 B站 同步状态
+   */
+  static async getBilibiliSyncStatus(articleId: string): Promise<SyncState> {
+    return window.electron.ipcRenderer.invoke('get-bilibili-sync-status', articleId);
+  }
+
+  /**
+   * 调用通用 IPC 方法
+   */
+  static async invoke(channel: string, ...args: any[]): Promise<any> {
+    return window.electron.ipcRenderer.invoke(channel, ...args);
+  }
 } 

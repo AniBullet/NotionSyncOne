@@ -1,8 +1,8 @@
-﻿# NotionSyncOne 环境初始化脚本 (Windows)
+# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
-# 切换到项目根目录
-Set-Location -Path (Split-Path -Parent $PSScriptRoot)
+# 确保在项目根目录
+Set-Location -Path $PSScriptRoot
 
 Write-Host "======================================"
 Write-Host "  NotionSyncOne 环境初始化"

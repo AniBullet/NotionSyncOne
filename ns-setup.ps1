@@ -44,7 +44,10 @@ if (Test-Path "node_modules") {
     Write-Host "      删除 node_modules..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force node_modules
 }
-# 注意：保留 pnpm-lock.yaml 以确保依赖版本一致
+if (Test-Path "pnpm-lock.yaml") {
+    Write-Host "      删除 pnpm-lock.yaml..." -ForegroundColor Yellow
+    Remove-Item -Force pnpm-lock.yaml
+}
 Write-Host "      清理完成" -ForegroundColor Green
 
 # 创建 .npmrc 配置

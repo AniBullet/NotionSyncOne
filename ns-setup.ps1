@@ -1,4 +1,4 @@
-﻿# NotionSyncOne 环境初始化脚本 (Windows)
+# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
 # 确保在项目根目录
@@ -44,10 +44,7 @@ if (Test-Path "node_modules") {
     Write-Host "      删除 node_modules..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force node_modules
 }
-if (Test-Path "pnpm-lock.yaml") {
-    Write-Host "      删除 pnpm-lock.yaml..." -ForegroundColor Yellow
-    Remove-Item -Force pnpm-lock.yaml
-}
+# 注意：保留 pnpm-lock.yaml 以确保依赖版本一致
 Write-Host "      清理完成" -ForegroundColor Green
 
 # 创建 .npmrc 配置
@@ -295,8 +292,8 @@ Write-Host "  pnpm dev        - 启动开发服务器"
 Write-Host "  pnpm build      - 构建生产版本"
 Write-Host ""
 Write-Host "或使用脚本："
-Write-Host "  .\scripts\dev.cmd    - 启动开发服务器"
-Write-Host "  .\scripts\build.cmd  - 构建生产版本"
+Write-Host "  .\ns-dev.cmd    - 启动开发服务器"
+Write-Host "  .\ns-build.cmd  - 构建生产版本"
 Write-Host ""
 
 if ($installedNewTools) {

@@ -1,4 +1,4 @@
-# NotionSyncOne 环境初始化脚本 (Windows)
+﻿# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
 # 确保在项目根目录
@@ -305,3 +305,4 @@ if ($installedNewTools) {
     Write-Host "提示：如需使用B站投稿功能，请在应用设置中启用" -ForegroundColor Cyan
 }
 Write-Host ""
+

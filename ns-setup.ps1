@@ -1,4 +1,4 @@
-# NotionSyncOne 环境初始化脚本 (Windows)
+﻿# NotionSyncOne 环境初始化脚本 (Windows)
 # 前提条件：已安装 Node.js
 
 # 确保在项目根目录

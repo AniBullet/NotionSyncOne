@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { Config } from '../../shared/types/config';
+import { APP_VERSION, GITHUB_REPO } from '../../shared/constants';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultTab?: 'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about';
 }
-
-const APP_VERSION = '1.1.0';
-const GITHUB_REPO = 'https://github.com/AniBullet/NotionSyncOne';
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultTab = 'notion' }) => {
   const [config, setConfig] = useState<Config>({

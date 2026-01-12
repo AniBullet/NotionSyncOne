@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { IpcService } from '../../shared/services/IpcService';
+import { APP_VERSION } from '../../shared/constants';
 import ArticleGrid from './ArticleGrid';
 import SettingsModal from './SettingsModal';
 import ConfirmDialog from './ConfirmDialog';
@@ -76,13 +77,11 @@ const MainLayout: React.FC = () => {
 
   const checkUpdate = async () => {
     try {
-      const pkg = await fetch('/package.json').then(r => r.json()).catch(() => ({ version: '1.0.1' }));
-      const currentVersion = pkg.version || '1.0.1';
       const res = await fetch('https://api.github.com/repos/AniBullet/NotionSyncOne/releases/latest');
       if (res.ok) {
         const data = await res.json();
         const latestVersion = data.tag_name?.replace(/^v/, '') || '';
-        if (latestVersion && compareVersion(latestVersion, currentVersion) > 0) {
+        if (latestVersion && compareVersion(latestVersion, APP_VERSION) > 0) {
           setHasUpdate(true);
         }
       }
@@ -683,7 +682,7 @@ const MainLayout: React.FC = () => {
           {selectedArticles.size > 0 && (
             <span>已选择 <b style={{ color: 'var(--primary-green)' }}>{selectedArticles.size}</b> 篇</span>
           )}
-          <span>NotionSyncOne v1.1.0</span>
+          <span>NotionSyncOne v{APP_VERSION}</span>
         </div>
       </footer>
 

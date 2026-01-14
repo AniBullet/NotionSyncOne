@@ -76,15 +76,19 @@ export class SyncService {
 
   /**
    * 按微信接口要求限制标题长度（按 UTF-8 字节数截断）
+   * 并过滤不支持的特殊字符和emoji
    * 说明：微信图文标题限制大约 64 字节，这里使用 64 作为安全上限
    */
   private cutWeChatTitle(rawTitle: string, maxBytes: number = 64): string {
     if (!rawTitle) return '';
 
+    // 先过滤不支持的特殊字符和emoji
+    let cleanedTitle = this.filterWeChatUnsupportedChars(rawTitle);
+    
     let bytes = 0;
     let result = '';
 
-    for (const ch of rawTitle) {
+    for (const ch of cleanedTitle) {
       const len = Buffer.byteLength(ch, 'utf8');
       if (bytes + len > maxBytes) {
         break;
@@ -93,15 +97,47 @@ export class SyncService {
       result += ch;
     }
 
-    // 如果被截断，可以在日志里记录一下方便排查
-    if (result.length < rawTitle.length) {
+    // 如果被截断或过滤，记录日志
+    if (result.length < rawTitle.length || cleanedTitle.length < rawTitle.length) {
       LogService.warn(
-        `标题长度超出微信限制，已自动截断。原始长度: ${rawTitle.length} 字符，截断后: ${result.length} 字符`,
+        `标题已处理。原始: "${rawTitle}"，处理后: "${result}"`,
         'SyncService'
       );
     }
 
     return result;
+  }
+
+  /**
+   * 过滤微信公众号不支持的特殊字符和emoji
+   * 微信公众号标题不支持大部分emoji和特殊符号
+   */
+  private filterWeChatUnsupportedChars(text: string): string {
+    if (!text) return '';
+    
+    // 移除emoji（包括常见的表情符号）
+    // Unicode emoji 范围：
+    // - Basic Emoji: U+1F300–U+1F6FF
+    // - Supplemental Symbols: U+1F900–U+1F9FF
+    // - Emoticons: U+1F600–U+1F64F
+    // - Misc Symbols: U+2600–U+26FF
+    // - Dingbats: U+2700–U+27BF
+    // - Misc Symbols and Pictographs: U+1F300–U+1F5FF
+    // - Transport and Map: U+1F680–U+1F6FF
+    let filtered = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/gu, '');
+    
+    // 移除其他可能导致问题的特殊字符
+    // 保留：中文、英文、数字、常见标点符号
+    // 移除：控制字符、特殊符号等
+    filtered = filtered.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // 控制字符
+    
+    // 移除一些可能导致发布失败的特殊符号（根据实际情况调整）
+    filtered = filtered.replace(/[🎬🎥📺🎞️📹🎦🎭🎪🎨🎯🎲🎰🎳]/g, ''); // 常见的媒体相关emoji
+    
+    // 移除多余的空格
+    filtered = filtered.replace(/\s+/g, ' ').trim();
+    
+    return filtered;
   }
 
   // 转义 HTML 特殊字符
@@ -112,6 +148,36 @@ export class SyncService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // 调整颜色亮度（用于创建渐变效果）
+  // amount: 正数变亮，负数变暗（-100 到 100）
+  private adjustColor(color: string, amount: number): string {
+    // 移除 # 符号
+    const hex = color.replace('#', '');
+    
+    // 解析 RGB 值
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // 调整亮度
+    const adjust = (c: number) => {
+      const adjusted = c + Math.round((amount / 100) * 255);
+      return Math.max(0, Math.min(255, adjusted));
+    };
+    
+    const newR = adjust(r);
+    const newG = adjust(g);
+    const newB = adjust(b);
+    
+    // 转换回十六进制
+    const toHex = (n: number) => {
+      const hex = n.toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    
+    return `#${toHex(newR)}${toHex(newG)}${toHex(newB)}`;
   }
 
   // 将 rich_text 数组转换为 HTML
@@ -255,12 +321,15 @@ export class SyncService {
   }
 
   // 更新同步状态
-  private updateSyncState(articleId: string, status: SyncStatus, error?: string): SyncState {
+  private updateSyncState(articleId: string, status: SyncStatus, error?: string, results?: SyncState['results']): SyncState {
+    // 保留之前的 results，如果有新的 results 则合并
+    const existingState = this.syncStates[articleId];
     const state: SyncState = {
       articleId,
       status,
       lastSyncTime: Date.now(),
-      error
+      error,
+      results: results ? { ...existingState?.results, ...results } : existingState?.results
     };
     this.syncStates[articleId] = state;
     this.saveSyncStates();
@@ -811,14 +880,15 @@ export class SyncService {
   }
 
   // 将块数组转换为HTML，处理列表项的分组
-  private convertBlocksToHtml(blocks: NotionBlock[], imageUrlMap?: Map<string, string>): string {
+  // forWeChat: 是否为微信公众号生成HTML（微信不支持iframe和video标签）
+  private convertBlocksToHtml(blocks: NotionBlock[], imageUrlMap?: Map<string, string>, forWeChat: boolean = true): string {
     const htmlParts: string[] = [];
     let currentList: { type: 'bulleted' | 'numbered'; items: string[] } | null = null;
     const theme = this.getCurrentTheme();
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
-      const html = this.convertBlockToHtml(block, imageUrlMap, theme);
+      const html = this.convertBlockToHtml(block, imageUrlMap, theme, forWeChat);
 
       // 处理列表项
       if (block.type === 'bulleted_list_item') {
@@ -861,7 +931,7 @@ export class SyncService {
     return htmlParts.join('\n\n');
   }
 
-  private convertBlockToHtml(block: NotionBlock, imageUrlMap?: Map<string, string>, theme?: ThemeStyles): string {
+  private convertBlockToHtml(block: NotionBlock, imageUrlMap?: Map<string, string>, theme?: ThemeStyles, forWeChat: boolean = true): string {
     const currentTheme = theme || this.getCurrentTheme();
     
     // 处理不同类型的块
@@ -920,8 +990,46 @@ export class SyncService {
       case 'video': {
         const url = block.content?.url || '';
         const caption = block.content?.caption?.[0]?.plain_text || '';
+        
         if (url) {
-          // 判断视频类型并生成相应的嵌入代码
+          // 微信公众号不支持 iframe 和 video 标签，使用简洁的链接卡片样式
+          if (forWeChat) {
+            // 提取视频平台信息
+            let platformName = '视频';
+            let platformIcon = '▶️';
+            
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+              platformName = 'YouTube';
+              platformIcon = '▶️';
+            } else if (url.includes('bilibili.com')) {
+              platformName = '哔哩哔哩';
+              platformIcon = '▶️';
+            } else if (url.includes('vimeo.com')) {
+              platformName = 'Vimeo';
+              platformIcon = '▶️';
+            } else if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)) {
+              platformName = '视频';
+              platformIcon = '▶️';
+            }
+            
+            // 创建简洁的视频链接卡片
+            const displayText = caption || platformName;
+            return `<section style="margin: 1.5em 0; padding: 16px 20px; background: #f8f9fa; border-left: 4px solid #576b95; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+  <div style="display: flex; align-items: flex-start; gap: 12px;">
+    <span style="font-size: 24px; flex-shrink: 0; margin-top: 2px;">${platformIcon}</span>
+    <div style="flex: 1; min-width: 0;">
+      <div style="font-size: 15px; font-weight: 500; color: #333; margin-bottom: 8px; line-height: 1.4;">
+        ${this.escapeHtml(displayText)}
+      </div>
+      <div style="font-size: 13px; color: #576b95; word-break: break-all; line-height: 1.5;">
+        ${this.escapeHtml(url)}
+      </div>
+    </div>
+  </div>
+</section>`;
+          }
+          
+          // WordPress 等其他平台：保持原有的 iframe/video 嵌入逻辑
           let videoHtml = '';
           
           // YouTube 视频检测
@@ -1355,8 +1463,8 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     // 获取 WordPress 配置
     const wpConfig = this.configService.getWordPressConfig();
     
-    // 构建文章内容 HTML
-    let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap);
+    // 构建文章内容 HTML（WordPress 支持 iframe/video，不使用微信格式）
+    let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap, false);
 
     // 获取文章属性
     const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
@@ -1553,15 +1661,58 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       const page = await this.notionService.getPageProperties(articleId);
       LogService.log(`文章标题: ${page.title}`, 'SyncService');
 
-      // 2. 从 Notion 获取文章来源（与微信同步保持一致）
+      // 2. 从 Notion 获取更多文章属性（用于简介模板）
       const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      if (linkStart) {
-        LogService.log(`文章来源: ${linkStart}`, 'SyncService');
-        // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
-        if (!metadata.source) {
-          metadata.source = linkStart;
+      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
+      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+      const engine = page.properties.Engine?.select?.name || '';
+      const expectationsRate = page.properties.ExpectationsRate?.number;
+      
+      // 提取标签
+      const featureTag = page.properties.FeatureTag;
+      let tags: string[] = [];
+      if (featureTag) {
+        if (featureTag.type === 'select' && featureTag.select) {
+          tags = [featureTag.select.name];
+        } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
+          tags = featureTag.multi_select.map((tag: any) => tag.name);
         }
       }
+      
+      // 获取添加时间
+      const addedTimeProperty = page.properties.AddedTime;
+      let addedTime = '';
+      if (addedTimeProperty) {
+        if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
+          addedTime = addedTimeProperty.date.start;
+        } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
+          addedTime = addedTimeProperty.created_time;
+        }
+      }
+      if (!addedTime && page.addedTime) {
+        addedTime = page.addedTime;
+      }
+      
+      LogService.log(`文章属性 - 来源: ${from}, 作者: ${author}, 链接: ${linkStart}`, 'SyncService');
+      
+      // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
+      if (linkStart && !metadata.source) {
+        metadata.source = linkStart;
+      }
+      
+      // 将 Notion 属性添加到 metadata 中（用于简介模板）
+      if (!metadata.notionProps) {
+        metadata.notionProps = {};
+      }
+      metadata.notionProps = {
+        from,
+        author,
+        engine,
+        expectationsRate,
+        tags,
+        addedTime,
+        linkStart
+      };
 
       // 3. 提取视频
       LogService.log('正在提取视频...', 'SyncService');
@@ -1616,11 +1767,22 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       if (result.link) {
         LogService.log(`稿件链接: ${result.link}`, 'SyncService');
       }
+      if (result.bvid) {
+        LogService.log(`稿件BV号: ${result.bvid}`, 'SyncService');
+      }
 
       // 清理控制器
       this.activeSyncControllers.delete(biliSyncKey);
 
-      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS);
+      // 保存B站上传结果到同步状态（包含标题用于后续验证）
+      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS, undefined, {
+        bilibili: {
+          bvid: result.bvid,
+          link: result.link,
+          aid: result.aid,
+          title: metadata.title  // 保存视频标题
+        }
+      });
       return successState;
     } catch (error) {
       LogService.error('========== B站同步失败 ==========', 'SyncService');

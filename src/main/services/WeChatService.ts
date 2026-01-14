@@ -835,9 +835,45 @@ export class WeChatService {
       };
       
       LogService.log(`正在提交发布请求...`, 'WeChatService');
+      LogService.log(`media_id: ${mediaId}`, 'WeChatService');
       const publishResponse = await axios.post<WeChatResponse>(publishUrl, publishData);
    
       logger.log('发布草稿响应 - 错误码:', publishResponse.data.errcode);
+      
+      // 检查是否有错误码
+      if (publishResponse.data.errcode && publishResponse.data.errcode !== 0) {
+        const errorMsg = publishResponse.data.errmsg || '未知错误';
+        const errorCode = publishResponse.data.errcode;
+        LogService.error(`发布失败 - 错误码: ${errorCode}, 错误信息: ${errorMsg}`, 'WeChatService');
+        
+        // 提供明显的错误提示
+        if (errorCode === 48001) {
+          throw new Error(
+            '❌ 发布失败：公众号没有发布权限！\n\n' +
+            '📋 可能原因：\n' +
+            '  1. 公众号未认证\n' +
+            '  2. 未开通「发布能力」接口权限\n' +
+            '  3. 公众号类型不支持（如个人订阅号）\n\n' +
+            '✅ 解决方案：\n' +
+            '  1. 登录微信公众平台 https://mp.weixin.qq.com/\n' +
+            '  2. 进入「开发」→「接口权限」，查看并申请「发布能力」\n' +
+            '  3. 或进入「设置」→「认证详情」，完成公众号认证\n\n' +
+            '💡 临时方案：\n' +
+            '  可以选择「保存草稿」，然后在微信公众平台后台手动发布'
+          );
+        } else if (errorCode === 88000) {
+          throw new Error('❌ 发布失败：内容包含违规信息，请检查文章内容是否符合微信公众平台规范');
+        } else if (errorCode === 88001) {
+          throw new Error('❌ 发布失败：文章内容包含不支持的 HTML 标签或格式');
+        } else if (errorCode === 200002) {
+          throw new Error('❌ 发布失败：图文消息包含外链，请移除或使用原文链接功能');
+        } else if (errorCode === 200011) {
+          throw new Error('❌ 发布失败：频繁发布，请稍后再试');
+        }
+        
+        throw new Error(`❌ 发布草稿失败：${errorMsg}（错误码：${errorCode}）`);
+      }
+      
       if (publishResponse.data.errcode === 0 && publishResponse.data.publish_id) {
         logger.log('文章提交发布成功，publish_id:', publishResponse.data.publish_id);
         
@@ -861,7 +897,15 @@ export class WeChatService {
             logger.always('文章发布成功，可在公众号查看');
             return;
           } else if (publishStatus > 1) { // 状态大于1表示发布失败
-            throw new Error(`发布失败: ${this.getPublishStatus(publishStatus)}`);
+            const statusMsg = this.getPublishStatus(publishStatus);
+            LogService.error(`发布失败: ${statusMsg}`, 'WeChatService');
+            
+            // 提供更详细的错误提示
+            if (publishStatus === 4 || publishStatus === 5 || publishStatus === 6 || publishStatus === 7 || publishStatus === 8) {
+              throw new Error(`发布失败: ${statusMsg}。建议：1) 检查文章内容是否符合规范 2) 尝试保存为草稿后在微信后台手动发布`);
+            }
+            
+            throw new Error(`发布失败: ${statusMsg}`);
           }
 
           // 如果状态是1(待发布)，继续等待

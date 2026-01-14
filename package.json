@@ -1,6 +1,6 @@
 {
   "name": "notionsyncone",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Notion 文章多平台同步工具",
   "main": "out/main/index.js",
   "author": "Bullet.S",
@@ -14,7 +14,12 @@
   },
   "scripts": {
     "dev": "cross-env NODE_ENV=development vite",
+    "dev:start": "node run-dev.js",
+    "dev:clean": "rimraf out dist node_modules/.vite",
     "build": "cross-env NODE_ENV=production vite build && electron-builder",
+    "build:start": "node run-build.js",
+    "build:dir": "cross-env NODE_ENV=production vite build && electron-builder --dir",
+    "setup": "node run-setup.js",
     "preview": "vite preview",
     "check:lint": "eslint src --ext ts,tsx --report-unused-disable-directs --max-warnings 0",
     "check:audit": "npm audit",

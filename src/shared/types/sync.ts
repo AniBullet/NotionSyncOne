@@ -11,6 +11,23 @@ export interface SyncState {
   progress?: number;
   error?: string;
   lastSyncTime?: number;
+  // 同步结果信息
+  results?: {
+    bilibili?: {
+      bvid?: string;
+      link?: string;
+      aid?: number;
+      title?: string;  // 记录视频标题，用于验证
+    };
+    wechat?: {
+      mediaId?: string;
+      url?: string;
+    };
+    wordpress?: {
+      postId?: number;
+      url?: string;
+    };
+  };
 }
 
 export interface SyncConfig {

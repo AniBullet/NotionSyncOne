@@ -12,7 +12,7 @@ export interface BilibiliConfig {
   // 是否启用
   enabled?: boolean;
   
-  // 简介模板（支持变量：{title}, {url}, {date}）
+  // 简介模板（支持变量：{title}, {url}, {date}, {from}, {author}, {engine}, {rate}, {tags}）
   descTemplate?: string;
   
   // 上传参数
@@ -63,6 +63,16 @@ export interface BilibiliMetadata {
   upCloseReply?: boolean;
   // 关闭弹幕
   upCloseDanmu?: boolean;
+  // Notion 页面属性（用于简介模板）
+  notionProps?: {
+    from?: string;         // 来源
+    author?: string;       // 作者
+    engine?: string;       // 使用引擎
+    expectationsRate?: number;  // 个人期望
+    tags?: string[];       // 标签特色
+    addedTime?: string;    // 添加时间
+    linkStart?: string;    // 链接
+  };
 }
 
 export interface BilibiliUploadOptions {

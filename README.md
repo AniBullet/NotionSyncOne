@@ -45,13 +45,15 @@
 git clone https://github.com/AniBullet/NotionSyncOne.git
 cd NotionSyncOne
 
-# 2. 一键初始化（Windows）
-.\ns-setup.ps1
+# 2. 一键初始化环境
+node run-setup.js
+# 或在 Cursor 中打开 run-setup.js，点击 Run Code
 
-# 3. 启动应用
-.\ns-dev.cmd
-# 或
-pnpm dev
+# 3. 启动开发服务器
+node run-dev.js
+# 或在 Cursor 中打开 run-dev.js，点击 Run Code
+# 或按 Ctrl+Shift+B 快捷启动
+# 或运行 pnpm dev
 ```
 
 <details>
@@ -277,23 +279,26 @@ Notion 编写 → 点击同步 → 选择平台 → 完成发布
 ## 📦 开发打包
 
 ```bash
-# 快速命令（Windows）
-.\ns-dev.cmd            # 开发模式
-.\ns-build.cmd          # 生产构建
+# 开发模式
+node run-dev.js          # 推荐：支持 Run Code
+pnpm dev:start           # 使用 npm scripts
+# 或按 Ctrl+Shift+B      # 快捷键
 
-# 或使用 pnpm 命令
-pnpm dev                # 开发模式
-pnpm build              # 生产构建
+# 生产构建
+node run-build.js        # 推荐：支持 Run Code
+pnpm build:start         # 使用 npm scripts
 
 # 其他命令
-pnpm check:audit        # 依赖安全检查
-pnpm check:lint         # 代码规范检查
+pnpm dev                 # 仅启动 vite
+pnpm build               # 完整构建
+pnpm check:audit         # 依赖安全检查
+pnpm check:lint          # 代码规范检查
 ```
 
 **打包说明**：
 - 打包产物在 `dist/` 目录
 - 推荐分享 `portable` 版本（体积小，无需安装）
-- `ns-` 前缀的脚本在根目录，方便快速访问
+- 所有脚本使用 `run-` 前缀，支持 Run Code 运行
 
 <details>
 <summary>🛠️ 技术栈</summary>

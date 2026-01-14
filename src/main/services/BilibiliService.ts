@@ -818,12 +818,41 @@ export class BilibiliService {
       // 处理简介模板
       let finalDesc = options.metadata.desc;
       if (!finalDesc && config.descTemplate) {
-        // 使用模板生成简介
+        // 获取 Notion 属性
+        const props = options.metadata.notionProps || {};
+        
+        // 格式化添加时间
+        let formattedDate = new Date().toLocaleDateString('zh-CN');
+        if (props.addedTime) {
+          formattedDate = new Date(props.addedTime).toLocaleDateString('zh-CN', { 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit' 
+          });
+        }
+        
+        // 格式化标签
+        const tagsStr = props.tags && props.tags.length > 0 
+          ? props.tags.join('、') 
+          : '';
+        
+        // 格式化期望值
+        const rateStr = props.expectationsRate !== undefined 
+          ? `${props.expectationsRate}/10` 
+          : '';
+        
+        // 使用模板生成简介，支持更多变量
         finalDesc = config.descTemplate
-          .replace('{title}', options.metadata.title)
-          .replace('{url}', options.metadata.source || '')
-          .replace('{date}', new Date().toLocaleDateString('zh-CN'));
-        LogService.log(`使用模板生成简介: ${finalDesc}`, 'BilibiliService');
+          .replace(/\{title\}/g, options.metadata.title)
+          .replace(/\{url\}/g, options.metadata.source || props.linkStart || '')
+          .replace(/\{date\}/g, formattedDate)
+          .replace(/\{from\}/g, props.linkStart || '')  // from 直接使用 linkStart
+          .replace(/\{author\}/g, props.author || '')
+          .replace(/\{engine\}/g, props.engine || '')
+          .replace(/\{rate\}/g, rateStr)
+          .replace(/\{tags\}/g, tagsStr);
+        
+        LogService.log(`使用模板生成简介: ${finalDesc.substring(0, 100)}...`, 'BilibiliService');
       }
 
       const finalMetadata = {
@@ -866,7 +895,15 @@ export class BilibiliService {
 
       // 可选参数
       if (finalMetadata.desc) {
-        args.push('--desc', finalMetadata.desc);
+        // 清理简介内容，避免命令行解析问题
+        let cleanDesc = finalMetadata.desc.trim();
+        // 避免以 - 开头（会被误认为命令行参数）
+        cleanDesc = cleanDesc.replace(/^-+/gm, match => '·'.repeat(match.length));
+        // 限制长度（B站简介最多2000字符）
+        if (cleanDesc.length > 2000) {
+          cleanDesc = cleanDesc.substring(0, 1997) + '...';
+        }
+        args.push('--desc', cleanDesc);
       }
       // 转载来源：只在版权类型为"转载"时传递（B站强制要求）
       // 否则用户可以在 descTemplate 中通过 {url} 变量自定义位置

@@ -548,11 +548,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                     <textarea
                       value={config.bilibili?.descTemplate || ''}
                       onChange={e => handleChange('bilibili', 'descTemplate', e.target.value)}
-                      placeholder="支持变量：{title} {url} {date}&#10;例如：{title}&#10;&#10;文章来源：{url}&#10;发布日期：{date}"
-                      style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
+                      placeholder="支持变量：{title} {url} {date} {from} {author} {engine} {rate} {tags}&#10;&#10;推荐格式示例：&#10;━━━━━━━━━━━━━━━&#10;📌 来源：{from}&#10;✍️ 作者：{author}&#10;🎮 引擎：{engine}&#10;⭐ 评分：{rate}&#10;🏷️ 标签：{tags}&#10;━━━━━━━━━━━━━━━&#10;🔗 原文：{url}&#10;📅 日期：{date}"
+                      style={{ ...inputStyle, minHeight: '140px', resize: 'vertical' }}
                     />
                     <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                      💡 {'{url}'} 将自动从 Notion 的 LinkStart 字段获取
+                      💡 支持8个变量 | 避免使用 ---- 分隔线（建议用 ━ 或 emoji）
                     </div>
                   </div>
 

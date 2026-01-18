@@ -1700,6 +1700,19 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
         metadata.source = linkStart;
       }
       
+      // 自动获取封面图片（如果 metadata 中没有指定 cover）
+      if (!metadata.cover) {
+        const coverUrl = this.getCoverImageUrl(page);
+        if (coverUrl) {
+          metadata.cover = coverUrl;
+          LogService.log(`已自动获取封面图片: ${coverUrl.substring(0, 50)}...`, 'SyncService');
+        } else {
+          LogService.log('未找到封面图片', 'SyncService');
+        }
+      } else {
+        LogService.log(`使用指定的封面图片: ${metadata.cover.substring(0, 50)}...`, 'SyncService');
+      }
+      
       // 将 Notion 属性添加到 metadata 中（用于简介模板）
       if (!metadata.notionProps) {
         metadata.notionProps = {};

@@ -76,11 +76,14 @@ function startDevServer() {
   console.log('======================================');
   console.log('');
 
-  // 启动 pnpm dev（Windows 需要 shell 来执行 .cmd 文件）
+  // 注意：Windows 必须使用 shell 来执行 .cmd 文件
+  // 这会产生 DEP0190 警告，但是安全的，因为：
+  // 1. 参数使用数组传递，不是字符串拼接
+  // 2. 命令和参数都是固定的，没有用户输入
   const dev = spawn('pnpm', ['dev'], {
     stdio: 'inherit',
     env: process.env,
-    shell: isWindows // 仅在 Windows 上启用 shell
+    shell: isWindows
   });
 
   dev.on('error', (error) => {

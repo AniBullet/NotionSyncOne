@@ -76,11 +76,11 @@ function startDevServer() {
   console.log('======================================');
   console.log('');
 
-  // 启动 pnpm dev
+  // 启动 pnpm dev（Windows 需要 shell 来执行 .cmd 文件）
   const dev = spawn('pnpm', ['dev'], {
-    shell: true,
     stdio: 'inherit',
-    env: process.env
+    env: process.env,
+    shell: isWindows // 仅在 Windows 上启用 shell
   });
 
   dev.on('error', (error) => {

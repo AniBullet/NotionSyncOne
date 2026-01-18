@@ -3,7 +3,7 @@
  * 使用方法：node run-build.js 或直接 Run Code
  */
 
-const { spawn, execSync } = require('child_process');
+const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -67,36 +67,39 @@ console.log('      3. 是否有管理员权限');
 console.log('======================================');
 console.log('');
 
-const build = spawn('pnpm', ['build'], {
-  stdio: 'inherit'
-});
+try {
+  execSync('pnpm build', {
+    stdio: 'inherit',
+    cwd: __dirname
+  });
 
-build.on('close', (code) => {
   console.log('');
   console.log('======================================');
-  if (code === 0) {
-    console.log('   ✓ 打包完成！');
-    console.log('');
-    console.log('[清理] 删除临时文件...');
-    const unpackedDir = path.join('dist', 'win-unpacked');
-    if (fs.existsSync(unpackedDir)) {
-      fs.rmSync(unpackedDir, { recursive: true, force: true });
-      console.log('      ✓ 已清理临时文件');
-    }
-    console.log('');
-    console.log('   安装程序位于: dist/');
-    
-    // 列出生成的文件
-    if (fs.existsSync('dist')) {
-      const files = fs.readdirSync('dist').filter(f => f.endsWith('.exe'));
-      files.forEach(file => console.log(`      - ${file}`));
-    }
-    console.log('');
-    console.log('   推荐分享: portable 版本（无需安装）');
-  } else {
-    console.log('   ✗ 打包失败');
+  console.log('   ✓ 打包完成！');
+  console.log('');
+  console.log('[清理] 删除临时文件...');
+  const unpackedDir = path.join('dist', 'win-unpacked');
+  if (fs.existsSync(unpackedDir)) {
+    fs.rmSync(unpackedDir, { recursive: true, force: true });
+    console.log('      ✓ 已清理临时文件');
   }
+  console.log('');
+  console.log('   安装程序位于: dist/');
+  
+  // 列出生成的文件
+  if (fs.existsSync('dist')) {
+    const files = fs.readdirSync('dist').filter(f => f.endsWith('.exe'));
+    files.forEach(file => console.log(`      - ${file}`));
+  }
+  console.log('');
+  console.log('   推荐分享: portable 版本（无需安装）');
   console.log('======================================');
   console.log('');
-  process.exit(code);
-});
+} catch (error) {
+  console.log('');
+  console.log('======================================');
+  console.log('   ✗ 打包失败');
+  console.log('======================================');
+  console.log('');
+  process.exit(1);
+}

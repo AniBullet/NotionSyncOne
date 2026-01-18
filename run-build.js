@@ -68,7 +68,6 @@ console.log('======================================');
 console.log('');
 
 const build = spawn('pnpm', ['build'], {
-  shell: true,
   stdio: 'inherit'
 });
 

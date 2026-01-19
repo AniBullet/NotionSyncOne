@@ -431,6 +431,64 @@ export class BilibiliService {
   }
 
   /**
+   * 下载封面图片（用于B站上传）
+   * 带缓存功能：相同URL的图片不会重复下载
+   */
+  async downloadCoverImage(
+    imageUrl: string,
+    abortSignal?: AbortSignal
+  ): Promise<string> {
+    try {
+      // 检查是否已取消
+      if (abortSignal?.aborted) {
+        throw new Error('下载已取消');
+      }
+
+      // 生成图片URL的哈希作为缓存文件名
+      const crypto = require('crypto');
+      const urlHash = crypto.createHash('md5').update(imageUrl).digest('hex');
+      // 尝试从URL中提取文件扩展名
+      const urlExt = imageUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i);
+      const ext = urlExt ? urlExt[1] : 'jpg';
+      const cachedFilename = `cover_${urlHash}.${ext}`;
+      const cachedPath = path.join(this.tempDir, cachedFilename);
+
+      // 检查缓存是否存在且有效
+      if (fs.existsSync(cachedPath)) {
+        const stats = fs.statSync(cachedPath);
+        if (stats.size > 0) {
+          LogService.log(`使用缓存的封面图片: ${(stats.size / 1024).toFixed(2)} KB`, 'BilibiliService');
+          return cachedPath;
+        }
+      }
+
+      LogService.log(`开始下载封面图片: ${imageUrl.substring(0, 80)}...`, 'BilibiliService');
+
+      // 下载图片
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30秒超时
+        signal: abortSignal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'image/*,*/*;q=0.8',
+        }
+      });
+
+      // 写入文件
+      fs.writeFileSync(cachedPath, response.data);
+
+      const stats = fs.statSync(cachedPath);
+      LogService.success(`封面图片下载完成: ${(stats.size / 1024).toFixed(2)} KB (已缓存)`, 'BilibiliService');
+
+      return cachedPath;
+    } catch (error) {
+      LogService.error('封面图片下载失败', 'BilibiliService', error);
+      throw error;
+    }
+  }
+
+  /**
    * 判断是否为外部视频URL（需要 yt-dlp 下载）
    */
   private isExternalVideoUrl(url: string): boolean {
@@ -910,8 +968,24 @@ export class BilibiliService {
       if (finalMetadata.source && finalMetadata.copyright === 2) {
         args.push('--source', finalMetadata.source);
       }
+      // 封面图片：如果是 URL，先下载到本地
       if (finalMetadata.cover) {
-        args.push('--cover', finalMetadata.cover);
+        try {
+          // 检查是否为 URL（以 http 开头）
+          if (finalMetadata.cover.startsWith('http://') || finalMetadata.cover.startsWith('https://')) {
+            LogService.log('封面图片是 URL，正在下载到本地...', 'BilibiliService');
+            const localCoverPath = await this.downloadCoverImage(finalMetadata.cover, abortSignal);
+            args.push('--cover', localCoverPath);
+            LogService.log(`使用本地封面图片: ${localCoverPath}`, 'BilibiliService');
+          } else {
+            // 已经是本地路径，直接使用
+            args.push('--cover', finalMetadata.cover);
+          }
+        } catch (error) {
+          LogService.error(`封面图片下载失败: ${error instanceof Error ? error.message : String(error)}`, 'BilibiliService');
+          LogService.warn('将不使用封面图片', 'BilibiliService');
+          // 不抛出错误，继续上传（没有封面图片）
+        }
       }
       if (finalMetadata.dynamic) {
         args.push('--dynamic', finalMetadata.dynamic);

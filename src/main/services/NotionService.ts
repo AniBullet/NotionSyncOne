@@ -6,10 +6,23 @@ import { logger } from '../utils/logger';
 export class NotionService {
   private client: Client | null = null;
   private config: NotionConfig;
+  
+  // 缓存机制
+  private articlesCache: NotionPage[] | null = null;
+  private cacheTime: number = 0;
+  private readonly CACHE_TTL = 60 * 1000; // 缓存有效期 60 秒
 
   constructor(config: NotionConfig) {
     this.config = config;
     this.initClient();
+  }
+  
+  /**
+   * 清除缓存
+   */
+  clearCache(): void {
+    this.articlesCache = null;
+    this.cacheTime = 0;
   }
 
   private initClient() {
@@ -28,13 +41,24 @@ export class NotionService {
     }
   }
 
-  async getArticles(): Promise<NotionPage[]> {
+  /**
+   * 获取文章列表
+   * @param forceRefresh 是否强制刷新（跳过缓存）
+   */
+  async getArticles(forceRefresh: boolean = false): Promise<NotionPage[]> {
     // 验证客户端和配置
     if (!this.client) {
       throw new Error('Notion 客户端未初始化，请检查 API Key');
     }
     if (!this.config.databaseId) {
       throw new Error('数据库 ID 未配置');
+    }
+    
+    // 检查缓存：如果缓存有效且不强制刷新，直接返回缓存
+    const now = Date.now();
+    if (!forceRefresh && this.articlesCache && (now - this.cacheTime) < this.CACHE_TTL) {
+      logger.log(`使用缓存数据（${this.articlesCache.length} 篇，缓存时间 ${Math.round((now - this.cacheTime) / 1000)}s）`);
+      return this.articlesCache;
     }
     
     // 添加重试机制处理网络错误
@@ -115,6 +139,10 @@ export class NotionService {
           };
         });
 
+        // 更新缓存
+        this.articlesCache = articles;
+        this.cacheTime = Date.now();
+        
         return articles;
       } catch (error: any) {
         lastError = error;

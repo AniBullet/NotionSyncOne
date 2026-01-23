@@ -55,9 +55,10 @@ export class IpcService {
 
   /**
    * 获取 Notion 页面列表
+   * @param forceRefresh 是否强制刷新（跳过缓存）
    */
-  static async getNotionPages(): Promise<any[]> {
-    return window.electron.getNotionPages();
+  static async getNotionPages(forceRefresh: boolean = false): Promise<any[]> {
+    return window.electron.ipcRenderer.invoke('get-notion-pages', forceRefresh);
   }
 
   /**

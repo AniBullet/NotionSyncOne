@@ -753,7 +753,14 @@ export class SyncService {
     // 获取配置中的作者，如果配置中没有则从文章属性获取
     const author = wechatConfig.author || authorProperty?.rich_text?.[0]?.plain_text || '';
 
-    const safeTitle = this.cutWeChatTitle(page.title);
+    // 应用标题模板（如果配置了）
+    let finalTitle = page.title;
+    if (wechatConfig.titleTemplate && wechatConfig.titleTemplate.trim()) {
+      finalTitle = wechatConfig.titleTemplate.replace(/\{title\}/g, page.title);
+      LogService.log(`应用标题模板: ${page.title} -> ${finalTitle}`, 'SyncService');
+    }
+
+    const safeTitle = this.cutWeChatTitle(finalTitle);
 
     return {
       title: safeTitle,
@@ -1495,6 +1502,13 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
       articleContent = articleHeader + '\n\n' + articleContent;
     }
 
+    // 应用标题模板（如果配置了）
+    let finalTitle = page.title;
+    if (wpConfig?.titleTemplate && wpConfig.titleTemplate.trim()) {
+      finalTitle = wpConfig.titleTemplate.replace(/\{title\}/g, page.title);
+      LogService.log(`应用标题模板: ${page.title} -> ${finalTitle}`, 'SyncService');
+    }
+
     // 获取摘要
     const excerpt = from || page.title.substring(0, 150);
 
@@ -1510,7 +1524,7 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     }
 
     return {
-      title: page.title,
+      title: finalTitle,
       content: articleContent,
       status,
       excerpt,
@@ -1726,6 +1740,14 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
         addedTime,
         linkStart
       };
+
+      // 应用标题模板（如果配置了）
+      const biliConfig = this.configService.getBilibiliConfig();
+      if (biliConfig.titleTemplate && biliConfig.titleTemplate.trim()) {
+        const originalTitle = metadata.title;
+        metadata.title = biliConfig.titleTemplate.replace(/\{title\}/g, metadata.title);
+        LogService.log(`应用标题模板: ${originalTitle} -> ${metadata.title}`, 'SyncService');
+      }
 
       // 3. 提取视频
       LogService.log('正在提取视频...', 'SyncService');

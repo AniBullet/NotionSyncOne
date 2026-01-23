@@ -14,6 +14,8 @@ export interface BilibiliConfig {
   
   // 简介模板（支持变量：{title}, {url}, {date}, {from}, {author}, {engine}, {rate}, {tags}）
   descTemplate?: string;
+  // 标题模板（支持 {title} 变量），例如：【转载】{title}
+  titleTemplate?: string;
   
   // 上传参数
   copyright?: 1 | 2;  // 1-自制 2-转载

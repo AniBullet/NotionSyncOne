@@ -11,13 +11,41 @@ import { SyncTarget } from './SyncButton';
 
 import iconUrl from '/icon.png';
 
+// 本地缓存 key
+const CACHE_KEY = 'notionsyncone_articles_cache';
+const CACHE_CONFIG_KEY = 'notionsyncone_config_cache';
+
+// 从 localStorage 读取缓存
+const loadCachedArticles = (): NotionPage[] => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.error('读取缓存失败:', e);
+  }
+  return [];
+};
+
+// 保存到 localStorage
+const saveCachedArticles = (articles: NotionPage[]) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(articles));
+  } catch (e) {
+    console.error('保存缓存失败:', e);
+  }
+};
+
 const MainLayout: React.FC = () => {
-  const [articles, setArticles] = useState<NotionPage[]>([]);
+  // 从缓存初始化文章列表（瞬间显示）
+  const [articles, setArticles] = useState<NotionPage[]>(() => loadCachedArticles());
   const [syncStates, setSyncStates] = useState<Record<string, SyncState>>({});
   const [wpSyncStates, setWpSyncStates] = useState<Record<string, SyncState>>({});
   const [biliSyncStates, setBiliSyncStates] = useState<Record<string, SyncState>>({});
   const [biliProgress, setBiliProgress] = useState<Record<string, { phase: string; progress: number }>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // 新增：后台刷新状态
   const [error, setError] = useState<string | null>(null);
   const [hasWordPressConfig, setHasWordPressConfig] = useState(false);
   const [hasBilibiliConfig, setHasBilibiliConfig] = useState(false);
@@ -102,19 +130,33 @@ const MainLayout: React.FC = () => {
     return 0;
   };
 
-  const loadData = async () => {
+  /**
+   * 加载数据
+   * @param forceRefresh 是否强制刷新（跳过缓存）
+   */
+  const loadData = async (forceRefresh: boolean = false) => {
+    const hasCachedData = articles.length > 0;
+    
     try {
-      setLoading(true);
+      // 如果有缓存数据，只显示后台刷新状态，不显示全屏 loading
+      if (hasCachedData) {
+        setRefreshing(true);
+        setStatusMessage('后台刷新中...');
+      } else {
+        setLoading(true);
+        setStatusMessage('正在加载文章...');
+      }
       setError(null);
-      setStatusMessage('正在加载文章...');
       
       const [pages, states, config] = await Promise.all([
-        IpcService.getNotionPages(),
+        IpcService.getNotionPages(forceRefresh),
         window.electron.ipcRenderer.invoke('get-all-sync-states'),
         IpcService.getConfig()
       ]);
       
+      // 更新文章并保存到本地缓存
       setArticles(pages);
+      saveCachedArticles(pages);
       
       // 分离各平台状态
       const wechatStates: Record<string, SyncState> = {};
@@ -143,10 +185,14 @@ const MainLayout: React.FC = () => {
     } catch (err) {
       console.error('加载数据失败:', err);
       const errMsg = err instanceof Error ? err.message : '加载失败';
-      setError(errMsg);
-      setStatusMessage(`加载失败: ${errMsg}`);
+      // 如果有缓存数据，错误只显示在状态栏，不影响UI
+      if (!hasCachedData) {
+        setError(errMsg);
+      }
+      setStatusMessage(`刷新失败: ${errMsg}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -603,8 +649,8 @@ const MainLayout: React.FC = () => {
           </div>
 
           <button
-            onClick={loadData}
-            disabled={loading}
+            onClick={() => loadData(true)}
+            disabled={loading || refreshing}
             style={{
               padding: '6px 12px',
               borderRadius: '6px',
@@ -612,13 +658,13 @@ const MainLayout: React.FC = () => {
               backgroundColor: 'transparent',
               color: 'var(--text-secondary)',
               fontSize: '12px',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              cursor: (loading || refreshing) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '4px'
             }}
           >
-            {loading ? '刷新中...' : '🔄 刷新'}
+            {(loading || refreshing) ? '🔄' : '🔄'} {refreshing ? '刷新中' : loading ? '加载中' : '刷新'}
           </button>
           
           <button
@@ -692,7 +738,7 @@ const MainLayout: React.FC = () => {
         onClose={() => { 
           setShowSettings(false); 
           setSettingsTab('notion');
-          loadData(); 
+          loadData(true); // 设置后强制刷新
         }}
         defaultTab={settingsTab}
       />

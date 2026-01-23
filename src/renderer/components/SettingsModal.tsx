@@ -62,7 +62,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           appId: loadedConfig.wechat?.appId || '',
           appSecret: loadedConfig.wechat?.appSecret || '',
           author: loadedConfig.wechat?.author || '',
-          topNotice: loadedConfig.wechat?.topNotice || ''
+          topNotice: loadedConfig.wechat?.topNotice || '',
+          titleTemplate: loadedConfig.wechat?.titleTemplate || ''
         },
         wordpress: {
           siteUrl: loadedConfig.wordpress?.siteUrl || '',
@@ -70,7 +71,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           appPassword: loadedConfig.wordpress?.appPassword || '',
           defaultCategory: loadedConfig.wordpress?.defaultCategory,
           defaultAuthor: loadedConfig.wordpress?.defaultAuthor,
-          topNotice: loadedConfig.wordpress?.topNotice || ''
+          topNotice: loadedConfig.wordpress?.topNotice || '',
+          titleTemplate: loadedConfig.wordpress?.titleTemplate || ''
         },
         bilibili: {
           enabled: loadedConfig.bilibili?.enabled || false,
@@ -78,6 +80,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           defaultTid: loadedConfig.bilibili?.defaultTid ?? undefined,
           defaultTags: loadedConfig.bilibili?.defaultTags || [],
           descTemplate: loadedConfig.bilibili?.descTemplate || '',
+          titleTemplate: loadedConfig.bilibili?.titleTemplate || '',
           copyright: loadedConfig.bilibili?.copyright ?? 1,
           noReprint: loadedConfig.bilibili?.noReprint ?? 0,
           openElec: loadedConfig.bilibili?.openElec ?? 0,
@@ -104,7 +107,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           appId: (config.wechat?.appId || '').trim(),
           appSecret: (config.wechat?.appSecret || '').trim(),
           author: (config.wechat?.author || '').trim() || undefined,
-          topNotice: (config.wechat?.topNotice || '').trim() || undefined
+          topNotice: (config.wechat?.topNotice || '').trim() || undefined,
+          titleTemplate: (config.wechat?.titleTemplate || '').trim() || undefined
         },
         wordpress: (config.wordpress?.siteUrl || config.wordpress?.topNotice) ? {
           siteUrl: (config.wordpress?.siteUrl || '').trim(),
@@ -112,7 +116,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           appPassword: (config.wordpress?.appPassword || '').trim(),
           defaultCategory: config.wordpress?.defaultCategory ? Number(config.wordpress.defaultCategory) : undefined,
           defaultAuthor: config.wordpress?.defaultAuthor ? Number(config.wordpress.defaultAuthor) : undefined,
-          topNotice: (config.wordpress?.topNotice || '').trim() || undefined
+          topNotice: (config.wordpress?.topNotice || '').trim() || undefined,
+          titleTemplate: (config.wordpress?.titleTemplate || '').trim() || undefined
         } : undefined,
         bilibili: config.bilibili ? {
           enabled: config.bilibili.enabled || false,
@@ -120,6 +125,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           defaultTid: config.bilibili.defaultTid != null ? Number(config.bilibili.defaultTid) : undefined,
           defaultTags: config.bilibili.defaultTags?.length ? config.bilibili.defaultTags.filter(t => t.trim()).map(t => t.trim()) : undefined,
           descTemplate: config.bilibili.descTemplate?.trim(),
+          titleTemplate: config.bilibili.titleTemplate?.trim() || undefined,
           copyright: config.bilibili.copyright != null ? Number(config.bilibili.copyright) : undefined,
           noReprint: config.bilibili.noReprint != null ? Number(config.bilibili.noReprint) : undefined,
           openElec: config.bilibili.openElec != null ? Number(config.bilibili.openElec) : undefined,
@@ -374,6 +380,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 <label style={labelStyle}>顶部提示语 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
                 <input type="text" value={config.wechat.topNotice || ''} onChange={e => handleChange('wechat', 'topNotice', e.target.value)} placeholder="文章顶部提示文字" style={inputStyle} />
               </div>
+              <div>
+                <label style={labelStyle}>标题模板 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
+                <input type="text" value={config.wechat.titleTemplate || ''} onChange={e => handleChange('wechat', 'titleTemplate', e.target.value)} placeholder="例如：【转载】{title}" style={inputStyle} />
+                <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>使用 {'{title}'} 代表原标题</p>
+              </div>
               <button onClick={testWechat} disabled={testing === 'wechat'} style={{ ...testBtnStyle, opacity: testing === 'wechat' ? 0.6 : 1, alignSelf: 'flex-start' }}>
                 {testing === 'wechat' ? '测试中...' : '🔗 测试连接'}
               </button>
@@ -409,6 +420,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
               <div>
                 <label style={labelStyle}>顶部提示语 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
                 <input type="text" value={config.wordpress?.topNotice || ''} onChange={e => handleChange('wordpress', 'topNotice', e.target.value)} placeholder="文章顶部提示文字" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>标题模板 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span></label>
+                <input type="text" value={config.wordpress?.titleTemplate || ''} onChange={e => handleChange('wordpress', 'titleTemplate', e.target.value)} placeholder="例如：【转载】{title}" style={inputStyle} />
+                <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>使用 {'{title}'} 代表原标题</p>
               </div>
               <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', margin: 0 }}>
                 分类/作者 ID 可在 WordPress 后台相应页面 URL 中查看（如 category&tag_ID=<strong>5</strong>）<br/>
@@ -541,6 +557,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                       placeholder="逗号分隔，如：教程, Notion"
                       style={inputStyle}
                     />
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>标题模板（可选）</label>
+                    <input
+                      type="text"
+                      value={config.bilibili?.titleTemplate || ''}
+                      onChange={e => handleChange('bilibili', 'titleTemplate', e.target.value)}
+                      placeholder="例如：【转载】{title}"
+                      style={inputStyle}
+                    />
+                    <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>使用 {'{title}'} 代表原标题</p>
                   </div>
 
                   <div>

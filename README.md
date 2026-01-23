@@ -169,6 +169,24 @@ node run-dev.js
 - `shanchui` - 橙黄色温暖主题
 - `chengxin` - 橙色活力主题
 
+#### 标题模板配置（可选）
+
+支持为同步的标题添加自定义格式，使用 `{title}` 变量代表原标题：
+
+```json
+{
+  "appId": "你的AppID",
+  "appSecret": "你的AppSecret",
+  "titleTemplate": "【转载】{title}"
+}
+```
+
+**常用模板**：
+- `【转载】{title}` - 添加前缀
+- `{title}【原创】` - 添加后缀
+- `【转】{title}【分享】` - 前后都添加
+- 不设置或留空 - 使用原标题
+
 </details>
 
 <details>
@@ -198,7 +216,7 @@ node run-dev.js
 
 #### 高级配置（可选）
 
-可配置文章的默认分类和标签：
+可配置文章的默认分类、标签和标题模板：
 
 ```json
 {
@@ -206,9 +224,12 @@ node run-dev.js
   "username": "admin",
   "appPassword": "xxxx xxxx xxxx xxxx",
   "defaultCategory": "技术",
-  "defaultTags": ["Notion", "自动化"]
+  "defaultTags": ["Notion", "自动化"],
+  "titleTemplate": "【转载】{title}"
 }
 ```
+
+**标题模板**：使用 `{title}` 变量代表原标题，可以添加前缀、后缀或其他格式。
 
 </details>
 
@@ -257,6 +278,16 @@ biliup login
 - ✅ 视频自动压缩（如果超过B站限制）
 - ✅ 支持草稿和直接发布两种模式
 - ✅ 自动设置标题、标签、分类
+
+**标题模板配置**：
+
+在配置中可以设置 `titleTemplate` 字段，使用 `{title}` 变量自定义标题格式：
+
+```json
+{
+  "titleTemplate": "【转载】{title}"
+}
+```
 
 **注意**：
 - 视频必须是 Notion 中上传的视频块，不支持外链视频

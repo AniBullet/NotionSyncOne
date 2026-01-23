@@ -10,32 +10,15 @@ import { Config } from '../../shared/types/config';
 import { logger } from '../utils/logger';
 
 /**
- * 安全存储的配置格式
- * 敏感字段使用 [encrypted] 前缀标记为加密字段
+ * 需要加密的字段路径（点分隔）
+ * 只需要在这里添加新的敏感字段路径即可
  */
-interface SecureConfig {
-  notion?: {
-    apiKey?: string;
-    databaseId?: string;
-  };
-  wechat?: {
-    appId?: string;
-    appSecret?: string;
-    author?: string;
-    topNotice?: string;
-    accessToken?: string;
-    tokenExpiresAt?: number;
-  };
-  wordpress?: {
-    siteUrl?: string;
-    username?: string;
-    appPassword?: string;
-    defaultCategory?: number;
-    defaultAuthor?: number;
-    topNotice?: string;
-  };
-  bilibili?: BilibiliConfig;
-}
+const ENCRYPTED_FIELDS = [
+  'notion.apiKey',
+  'wechat.appId',
+  'wechat.appSecret',
+  'wordpress.appPassword',
+];
 
 export class ConfigService {
   private configPath: string;
@@ -51,11 +34,7 @@ export class ConfigService {
     }
     
     this.configPath = join(configDir, 'config.json');
-    this.config = {
-      notion: { apiKey: '', databaseId: '' },
-      wechat: { appId: '', appSecret: '' },
-      bilibili: { enabled: false }
-    };
+    this.config = this.getDefaultConfig();
 
     // 检查加密是否可用
     this.encryptionAvailable = safeStorage.isEncryptionAvailable();
@@ -72,6 +51,39 @@ export class ConfigService {
   }
 
   /**
+   * 获取默认配置
+   */
+  private getDefaultConfig(): Config {
+    return {
+      notion: { apiKey: '', databaseId: '' },
+      wechat: { appId: '', appSecret: '' },
+      bilibili: { enabled: false }
+    };
+  }
+
+  /**
+   * 根据路径获取对象的值
+   */
+  private getValueByPath(obj: any, path: string): any {
+    return path.split('.').reduce((current, key) => current?.[key], obj);
+  }
+
+  /**
+   * 根据路径设置对象的值
+   */
+  private setValueByPath(obj: any, path: string, value: any): void {
+    const keys = path.split('.');
+    const lastKey = keys.pop()!;
+    const target = keys.reduce((current, key) => {
+      if (current[key] === undefined) {
+        current[key] = {};
+      }
+      return current[key];
+    }, obj);
+    target[lastKey] = value;
+  }
+
+  /**
    * 加密敏感字符串
    */
   private encryptString(plaintext: string): string {
@@ -81,7 +93,6 @@ export class ConfigService {
     
     try {
       const buffer = safeStorage.encryptString(plaintext);
-      // 使用 [encrypted] 前缀标记 + Base64 编码
       return '[encrypted]' + buffer.toString('base64');
     } catch (error) {
       logger.error('加密失败，使用明文:', error);
@@ -97,9 +108,7 @@ export class ConfigService {
       return '';
     }
 
-    // 检查是否为加密字段
     if (!encrypted.startsWith('[encrypted]')) {
-      // 明文字段，直接返回
       return encrypted;
     }
 
@@ -109,7 +118,6 @@ export class ConfigService {
     }
 
     try {
-      // 移除前缀并解码
       const base64 = encrypted.substring('[encrypted]'.length);
       const buffer = Buffer.from(base64, 'base64');
       return safeStorage.decryptString(buffer);
@@ -119,17 +127,84 @@ export class ConfigService {
     }
   }
 
+  /**
+   * 深度克隆对象
+   */
+  private deepClone<T>(obj: T): T {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  /**
+   * 深度合并对象（source 覆盖 target 中存在的字段）
+   */
+  private deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+    const result = this.deepClone(target);
+    
+    for (const key in source) {
+      if (source[key] !== undefined) {
+        if (
+          typeof source[key] === 'object' &&
+          source[key] !== null &&
+          !Array.isArray(source[key]) &&
+          typeof result[key] === 'object' &&
+          result[key] !== null
+        ) {
+          // 递归合并对象
+          result[key] = this.deepMerge(result[key], source[key] as any);
+        } else {
+          // 直接覆盖
+          result[key] = this.deepClone(source[key]) as any;
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 加密配置中的敏感字段
+   */
+  private encryptConfig(config: any): any {
+    const encrypted = this.deepClone(config);
+    
+    for (const fieldPath of ENCRYPTED_FIELDS) {
+      const value = this.getValueByPath(encrypted, fieldPath);
+      if (value && typeof value === 'string') {
+        this.setValueByPath(encrypted, fieldPath, this.encryptString(value));
+      }
+    }
+    
+    return encrypted;
+  }
+
+  /**
+   * 解密配置中的敏感字段
+   */
+  private decryptConfig(config: any): any {
+    const decrypted = this.deepClone(config);
+    
+    for (const fieldPath of ENCRYPTED_FIELDS) {
+      const value = this.getValueByPath(decrypted, fieldPath);
+      if (value && typeof value === 'string') {
+        this.setValueByPath(decrypted, fieldPath, this.decryptString(value));
+      }
+    }
+    
+    return decrypted;
+  }
+
   async init(): Promise<void> {
     try {
       await this.loadConfig();
       
-      // 如果加密可用，检查并升级旧配置
       if (this.encryptionAvailable) {
         await this.migrateToEncrypted();
       }
     } catch (error) {
       logger.error('加载配置失败，使用默认配置:', error);
-      // 确保配置文件存在
       const configDir = dirname(this.configPath);
       if (!existsSync(configDir)) {
         mkdirSync(configDir, { recursive: true });
@@ -144,27 +219,20 @@ export class ConfigService {
   private async migrateToEncrypted(): Promise<void> {
     try {
       const data = await fs.readFile(this.configPath, 'utf-8');
-      const rawConfig: SecureConfig = JSON.parse(data);
+      const rawConfig = JSON.parse(data);
       
-      // 检查是否有未加密的敏感字段
       let needsMigration = false;
       
-      if (rawConfig.notion?.apiKey && !rawConfig.notion.apiKey.startsWith('[encrypted]')) {
-        needsMigration = true;
-      }
-      if (rawConfig.wechat?.appId && !rawConfig.wechat.appId.startsWith('[encrypted]')) {
-        needsMigration = true;
-      }
-      if (rawConfig.wechat?.appSecret && !rawConfig.wechat.appSecret.startsWith('[encrypted]')) {
-        needsMigration = true;
-      }
-      if (rawConfig.wordpress?.appPassword && !rawConfig.wordpress.appPassword.startsWith('[encrypted]')) {
-        needsMigration = true;
+      for (const fieldPath of ENCRYPTED_FIELDS) {
+        const value = this.getValueByPath(rawConfig, fieldPath);
+        if (value && typeof value === 'string' && !value.startsWith('[encrypted]')) {
+          needsMigration = true;
+          break;
+        }
       }
       
       if (needsMigration) {
         logger.log('⚠ 检测到明文配置，正在升级到加密存储...', 'ConfigService');
-        // 重新保存配置，会自动加密
         await this.saveConfig(this.config);
         logger.log('✓ 配置升级完成，敏感信息已加密保护', 'ConfigService');
       }
@@ -182,46 +250,13 @@ export class ConfigService {
       }
       
       const data = await fs.readFile(this.configPath, 'utf-8');
-      const loadedConfig: SecureConfig = JSON.parse(data);
+      const loadedConfig = JSON.parse(data);
       
-      // 解密敏感字段并确保配置对象包含所有必要的字段
-      this.config = {
-        notion: {
-          apiKey: this.decryptString(loadedConfig.notion?.apiKey || ''),
-          databaseId: loadedConfig.notion?.databaseId || '',
-        },
-        wechat: {
-          appId: this.decryptString(loadedConfig.wechat?.appId || ''),
-          appSecret: this.decryptString(loadedConfig.wechat?.appSecret || ''),
-          author: loadedConfig.wechat?.author,
-          topNotice: loadedConfig.wechat?.topNotice,
-          // Token 信息（临时的，不加密）
-          accessToken: loadedConfig.wechat?.accessToken,
-          tokenExpiresAt: loadedConfig.wechat?.tokenExpiresAt,
-        },
-        // WordPress 配置（可选）
-        wordpress: loadedConfig.wordpress ? {
-          siteUrl: loadedConfig.wordpress.siteUrl || '',
-          username: loadedConfig.wordpress.username || '',
-          appPassword: this.decryptString(loadedConfig.wordpress.appPassword || ''),
-          defaultCategory: loadedConfig.wordpress.defaultCategory,
-          defaultAuthor: loadedConfig.wordpress.defaultAuthor,
-          topNotice: loadedConfig.wordpress.topNotice,
-        } : undefined,
-        // Bilibili 配置（可选，Cookie文件路径不加密）
-        bilibili: loadedConfig.bilibili ? {
-          cookieFile: loadedConfig.bilibili.cookieFile,
-          defaultTid: loadedConfig.bilibili.defaultTid,
-          defaultTags: loadedConfig.bilibili.defaultTags,
-          enabled: loadedConfig.bilibili.enabled || false,
-          descTemplate: loadedConfig.bilibili.descTemplate,
-          copyright: loadedConfig.bilibili.copyright,
-          noReprint: loadedConfig.bilibili.noReprint,
-          openElec: loadedConfig.bilibili.openElec,
-          upCloseReply: loadedConfig.bilibili.upCloseReply,
-          upCloseDanmu: loadedConfig.bilibili.upCloseDanmu,
-        } : { enabled: false },
-      };
+      // 解密敏感字段
+      const decryptedConfig = this.decryptConfig(loadedConfig);
+      
+      // 合并到默认配置（确保所有字段都存在）
+      this.config = this.deepMerge(this.getDefaultConfig(), decryptedConfig);
       
       logger.log('✓ 配置加载成功', 'ConfigService');
       return this.config;
@@ -237,72 +272,30 @@ export class ConfigService {
 
   async saveConfig(newConfig: Config): Promise<void> {
     try {
-      // 调试：打印收到的配置
-      logger.log('[saveConfig] 收到的 newConfig.bilibili:', 'ConfigService');
-      console.log(JSON.stringify(newConfig.bilibili, null, 2));
-      
-      // 验证并格式化配置
+      // 验证必填字段
       this.validateConfig(newConfig);
       
-      // 合并配置，保留已有的 token 等信息
-      this.config = {
-        ...this.config,
-        notion: newConfig.notion,
-        wechat: {
-          ...this.config.wechat,
-          ...newConfig.wechat,
-          // 确保保留 token 信息
-          accessToken: this.config.wechat?.accessToken || newConfig.wechat?.accessToken,
-          tokenExpiresAt: this.config.wechat?.tokenExpiresAt || newConfig.wechat?.tokenExpiresAt,
-        },
-        // WordPress 配置（可选）
-        wordpress: newConfig.wordpress ? {
-          ...this.config.wordpress,
-          ...newConfig.wordpress,
-        } : this.config.wordpress,
-        // Bilibili 配置（可选） - 合并配置
-        bilibili: newConfig.bilibili ? {
-          ...this.config.bilibili,
-          ...newConfig.bilibili,
-        } : this.config.bilibili,
+      // 保留已有的 token 信息（不被覆盖）
+      const preservedToken = {
+        accessToken: this.config.wechat?.accessToken,
+        tokenExpiresAt: this.config.wechat?.tokenExpiresAt,
       };
       
-      // 调试：打印合并后的配置
-      logger.log('[saveConfig] 合并后的 this.config.bilibili:', 'ConfigService');
-      console.log(JSON.stringify(this.config.bilibili, null, 2));
+      // 深度合并配置
+      this.config = this.deepMerge(this.config, newConfig);
       
-      // 创建加密的配置对象（敏感字段加密）
-      const secureConfig: SecureConfig = {
-        notion: {
-          apiKey: this.encryptString(this.config.notion?.apiKey || ''),
-          databaseId: this.config.notion?.databaseId,
-        },
-        wechat: {
-          appId: this.encryptString(this.config.wechat?.appId || ''),
-          appSecret: this.encryptString(this.config.wechat?.appSecret || ''),
-          author: this.config.wechat?.author,
-          topNotice: this.config.wechat?.topNotice,
-          // Token 信息（临时的，不加密）
-          accessToken: this.config.wechat?.accessToken,
-          tokenExpiresAt: this.config.wechat?.tokenExpiresAt,
-        },
-        wordpress: this.config.wordpress ? {
-          siteUrl: this.config.wordpress.siteUrl,
-          username: this.config.wordpress.username,
-          appPassword: this.encryptString(this.config.wordpress.appPassword || ''),
-          defaultCategory: this.config.wordpress.defaultCategory,
-          defaultAuthor: this.config.wordpress.defaultAuthor,
-          topNotice: this.config.wordpress.topNotice,
-        } : undefined,
-        bilibili: this.config.bilibili,
-      };
+      // 恢复 token 信息
+      if (preservedToken.accessToken) {
+        this.config.wechat.accessToken = preservedToken.accessToken;
+      }
+      if (preservedToken.tokenExpiresAt) {
+        this.config.wechat.tokenExpiresAt = preservedToken.tokenExpiresAt;
+      }
       
-      // 调试：打印最终要保存的配置
-      logger.log('[saveConfig] 最终 secureConfig.bilibili:', 'ConfigService');
-      console.log(JSON.stringify(secureConfig.bilibili, null, 2));
+      // 加密敏感字段并保存
+      const encryptedConfig = this.encryptConfig(this.config);
       
-      // 保存加密后的配置
-      await fs.writeFile(this.configPath, JSON.stringify(secureConfig, null, 2));
+      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
       
       logger.log('✓ 配置已安全保存（敏感字段已加密）', 'ConfigService');
     } catch (error) {
@@ -317,19 +310,16 @@ export class ConfigService {
 
   async saveNotionConfig(config: NotionConfig): Promise<void> {
     try {
-      // 更新配置
       this.config.notion = config;
       
-      // 确保配置目录存在
       const configDir = dirname(this.configPath);
       if (!existsSync(configDir)) {
         mkdirSync(configDir, { recursive: true });
       }
       
-      // 保存到文件
-      await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
+      const encryptedConfig = this.encryptConfig(this.config);
+      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
       
-      // 验证配置是否保存成功
       await this.loadConfig();
     } catch (error) {
       logger.error('保存 Notion 配置失败:', error);
@@ -351,8 +341,11 @@ export class ConfigService {
 
   async saveBilibiliConfig(config: BilibiliConfig): Promise<void> {
     try {
-      this.config.bilibili = config;
-      await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2));
+      this.config.bilibili = { ...this.config.bilibili, ...config };
+      
+      const encryptedConfig = this.encryptConfig(this.config);
+      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      
       await this.loadConfig();
     } catch (error) {
       logger.error('保存 Bilibili 配置失败:', error);
@@ -362,14 +355,12 @@ export class ConfigService {
 
   // 格式化数据库 ID
   private formatDatabaseId(id: string): string {
-    // 移除所有非字母数字字符
     const cleanId = id.replace(/[^a-zA-Z0-9]/g, '');
     
     if (cleanId.length !== 32) {
       throw new Error('数据库 ID 必须是 32 位字符');
     }
 
-    // 转换为 UUID 格式
     return [
       cleanId.slice(0, 8),
       cleanId.slice(8, 12),
@@ -393,7 +384,6 @@ export class ConfigService {
       errors.push('数据库 ID 不能为空');
     } else {
       try {
-        // 尝试格式化数据库 ID
         config.notion.databaseId = this.formatDatabaseId(config.notion.databaseId);
       } catch (error) {
         errors.push(error instanceof Error ? error.message : '数据库 ID 格式不正确');
@@ -412,4 +402,4 @@ export class ConfigService {
       throw new Error(errors.join('\n'));
     }
   }
-} 
+}

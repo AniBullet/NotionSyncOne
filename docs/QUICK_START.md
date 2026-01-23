@@ -110,11 +110,17 @@ https://www.notion.so/workspace/abc123def456?v=789xyz
 {
   "appId": "你的AppID",
   "appSecret": "你的AppSecret",
-  "theme": "wechat"
+  "theme": "wechat",
+  "titleTemplate": "【转载】{title}"
 }
 ```
 
 **theme 可选值**：`default`、`wechat`、`hongfei`、`jianhei`、`shanchui`、`chengxin`
+
+**titleTemplate**：标题模板，使用 `{title}` 代表原标题
+- 示例：`【转载】{title}` - 添加前缀
+- 示例：`{title}【精选】` - 添加后缀
+- 留空则使用原标题
 
 </details>
 
@@ -129,6 +135,10 @@ https://www.notion.so/workspace/abc123def456?v=789xyz
    - **用户名**：WordPress 用户名
    - **应用密码**：刚才复制的密码
 5. 点击「保存配置」
+
+**可选配置**：
+- **标题模板**：使用 `{title}` 代表原标题，例如 `【转载】{title}`
+- **顶部提示语**：在文章顶部显示的提示文字
 
 </details>
 
@@ -150,6 +160,11 @@ biliup login
 ```
 
 扫码登录后，应用就能自动使用这个账号投稿了。
+
+**可选配置**：
+- **标题模板**：使用 `{title}` 代表原标题，例如 `【转载】{title}`
+- **简介模板**：支持变量 `{title}` `{url}` `{date}` `{from}` `{author}` `{engine}` `{rate}` `{tags}`
+- **默认分区和标签**：为所有投稿设置默认值
 
 </details>
 
@@ -207,6 +222,14 @@ biliup login
 
 - Notion 页面的封面图会自动作为文章封面
 - 支持 Notion 自带封面和自定义上传的图片
+
+### 7. 标题模板
+
+在设置中可为每个平台配置标题模板：
+- 使用 `{title}` 代表原标题
+- 示例：`【转载】{title}` - 为所有同步的文章添加前缀
+- 示例：`{title}【精选】` - 添加后缀
+- 每个平台可以单独配置不同的模板
 
 ---
 

@@ -9,6 +9,8 @@ export interface WeChatConfig {
   topNotice?: string;
   // 主题样式：default, wechat, hongfei, jianhei, shanchui, chengxin
   theme?: string;
+  // 标题模板（支持 {title} 变量），例如：【转载】{title}
+  titleTemplate?: string;
 }
 
 export interface WeChatArticle {

@@ -5,6 +5,7 @@ export interface WordPressConfig {
   defaultCategory?: number;  // 默认分类 ID
   defaultAuthor?: number;    // 默认作者 ID
   topNotice?: string;        // 顶部提示语
+  titleTemplate?: string;    // 标题模板（支持 {title} 变量），例如：【转载】{title}
 }
 
 export interface WordPressArticle {

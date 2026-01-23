@@ -62,70 +62,33 @@ export function setupIpcHandlers(
     }
   });
 
-  ipcMain.handle('save-config', async (event, config: any) => {
+  ipcMain.handle('save-config', async (event, config: Config) => {
     try {
-      // 直接使用传入的配置对象
-      const configToSave: Config = {
-        notion: {
-          apiKey: config.notion.apiKey,
-          databaseId: config.notion.databaseId
-        },
-        wechat: {
-          appId: config.wechat.appId,
-          appSecret: config.wechat.appSecret,
-          author: config.wechat.author,
-          topNotice: config.wechat.topNotice
-        },
-        // WordPress 配置（可选）
-        wordpress: config.wordpress ? {
-          siteUrl: config.wordpress.siteUrl,
-          username: config.wordpress.username,
-          appPassword: config.wordpress.appPassword,
-          defaultCategory: config.wordpress.defaultCategory,
-          defaultAuthor: config.wordpress.defaultAuthor,
-          topNotice: config.wordpress.topNotice
-        } : undefined,
-        // Bilibili 配置（可选）
-        bilibili: config.bilibili ? {
-          cookieFile: config.bilibili.cookieFile,
-          defaultTid: config.bilibili.defaultTid,
-          defaultTags: config.bilibili.defaultTags,
-          enabled: config.bilibili.enabled,
-          descTemplate: config.bilibili.descTemplate,
-          copyright: config.bilibili.copyright,
-          noReprint: config.bilibili.noReprint,
-          openElec: config.bilibili.openElec,
-          upCloseReply: config.bilibili.upCloseReply,
-          upCloseDanmu: config.bilibili.upCloseDanmu
-        } : undefined
-      };
-      
       // 验证配置
-      if (!configToSave.notion.apiKey || !configToSave.notion.databaseId) {
+      if (!config.notion?.apiKey || !config.notion?.databaseId) {
         throw new Error('Notion API Key 和数据库 ID 不能为空');
       }
       
-      if (!configToSave.wechat.appId || !configToSave.wechat.appSecret) {
+      if (!config.wechat?.appId || !config.wechat?.appSecret) {
         throw new Error('微信 AppID 和 AppSecret 不能为空');
       }
       
-      // 保存配置      
-      // 保存配置
-      await configService.saveConfig(configToSave);
+      // 直接透传配置，不再手动列举字段（ConfigService 会处理）
+      await configService.saveConfig(config);
       
       // 重新初始化服务
-      notionService = new NotionService(configToSave.notion);
+      notionService = new NotionService(config.notion);
       weChatService = new WeChatService(configService);
       
       // 初始化 WordPress 服务（如果配置了）
-      if (configToSave.wordpress?.siteUrl && configToSave.wordpress?.username && configToSave.wordpress?.appPassword) {
+      if (config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword) {
         wordPressService = new WordPressService(configService);
       } else {
         wordPressService = null;
       }
       
       // 初始化 Bilibili 服务（如果启用了）
-      if (configToSave.bilibili?.enabled) {
+      if (config.bilibili?.enabled) {
         bilibiliService = new BilibiliService(configService);
       } else {
         bilibiliService = null;
@@ -141,12 +104,12 @@ export function setupIpcHandlers(
   });
 
   // Notion 相关
-  ipcMain.handle('get-notion-pages', async () => {
+  ipcMain.handle('get-notion-pages', async (event, forceRefresh: boolean = false) => {
     if (!notionService) {
       throw new Error('Notion 服务未初始化，请先设置 API Key 和数据库 ID');
     }
-    // 减少日志输出，避免日志过多
-    const pages = await notionService.getArticles();
+    // 支持缓存和强制刷新
+    const pages = await notionService.getArticles(forceRefresh);
     return pages;
   });
 

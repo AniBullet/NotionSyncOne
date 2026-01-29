@@ -541,7 +541,8 @@ export class BilibiliService {
         '--merge-output-format', 'mp4', // 合并为 mp4
         '--no-check-certificate',     // 跳过证书验证
         '--progress',                 // 显示进度
-        '--newline'                   // 每行显示新进度
+        '--newline',                  // 每行显示新进度
+        '--extractor-args', 'youtube:player_client=ios,web'  // 使用 iOS+web 客户端组合绕过 403 限制
       ];
 
       const process = spawn(ytDlpPath, args, {

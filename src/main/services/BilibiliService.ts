@@ -367,10 +367,10 @@ export class BilibiliService {
         throw new Error('下载已取消');
       }
 
-      // 生成视频URL的哈希作为缓存文件名
+      // 生成视频URL的哈希作为缓存文件名（包含 _hd 标识以区分旧的低清晰度缓存）
       const crypto = require('crypto');
       const urlHash = crypto.createHash('md5').update(video.url).digest('hex');
-      const cachedFilename = `cached_${urlHash}.mp4`;
+      const cachedFilename = `cached_${urlHash}_hd.mp4`;
       const cachedPath = path.join(this.tempDir, cachedFilename);
 
       // 检查缓存是否存在且有效
@@ -537,12 +537,11 @@ export class BilibiliService {
         url,
         '-o', outputPath,
         '--no-playlist',              // 不下载播放列表
-        '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', // 优先 mp4 格式
+        '--format', 'bestvideo+bestaudio/best',  // 下载最高画质视频+最佳音频
         '--merge-output-format', 'mp4', // 合并为 mp4
-        '--no-check-certificate',     // 跳过证书验证
         '--progress',                 // 显示进度
         '--newline',                  // 每行显示新进度
-        '--extractor-args', 'youtube:player_client=ios,web'  // 使用 iOS+web 客户端组合绕过 403 限制
+        '--extractor-args', 'youtube:player_client=android_vr'  // android_vr 客户端不需要 PO Token
       ];
 
       const process = spawn(ytDlpPath, args, {

@@ -6,6 +6,19 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+
+// 设置Windows终端为UTF-8编码（修复中文乱码）
+if (os.platform() === 'win32') {
+  try {
+    execSync('chcp 65001', { stdio: 'pipe' });
+    if (process.stdout.setEncoding) {
+      process.stdout.setEncoding('utf8');
+    }
+  } catch (err) {
+    // 忽略错误，继续执行
+  }
+}
 
 console.log('======================================');
 console.log('   NotionSyncOne 打包构建');

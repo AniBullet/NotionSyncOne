@@ -8,10 +8,23 @@
  * 3. 或者在终端运行: node dev.js
  */
 
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+
+// 设置Windows终端为UTF-8编码（修复中文乱码）
+if (os.platform() === 'win32') {
+  try {
+    execSync('chcp 65001', { stdio: 'pipe' });
+    // 设置Node.js输出编码
+    if (process.stdout.setEncoding) {
+      process.stdout.setEncoding('utf8');
+    }
+  } catch (err) {
+    // 忽略错误，继续执行
+  }
+}
 
 console.log('======================================');
 console.log('   NotionSyncOne Dev Server');
@@ -45,7 +58,6 @@ console.log('');
 
 // 清理端口（静默执行，不阻塞）
 console.log('[2/3] 检查端口 5173...');
-const { execSync } = require('child_process');
 
 try {
   if (isWindows) {

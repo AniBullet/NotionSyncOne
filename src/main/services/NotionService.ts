@@ -54,6 +54,12 @@ export class NotionService {
       throw new Error('数据库 ID 未配置');
     }
     
+    // 强制刷新时清除缓存
+    if (forceRefresh) {
+      logger.log('🔄 强制刷新：清除缓存，从 Notion API 获取最新数据');
+      this.clearCache();
+    }
+    
     // 检查缓存：如果缓存有效且不强制刷新，直接返回缓存
     const now = Date.now();
     if (!forceRefresh && this.articlesCache && (now - this.cacheTime) < this.CACHE_TTL) {
@@ -91,7 +97,12 @@ export class NotionService {
           startCursor = response.next_cursor || undefined;
         }
 
-        logger.log(`已获取 ${allResults.length} 篇文章`);
+        const fetchTime = Date.now();
+        logger.log(`✓ 已从 Notion API 获取 ${allResults.length} 篇文章（${forceRefresh ? '强制刷新' : '正常获取'}）`);
+        
+        if (forceRefresh) {
+          logger.log(`提示：如果最新文章未显示，可能是 Notion 服务器端同步延迟（通常需要1-2分钟）`, 'NotionService');
+        }
 
         const articles = allResults.map((page: PageObjectResponse) => {
           // 查找标题属性
@@ -141,7 +152,9 @@ export class NotionService {
 
         // 更新缓存
         this.articlesCache = articles;
-        this.cacheTime = Date.now();
+        this.cacheTime = fetchTime;
+        
+        logger.log(`✓ 缓存已更新（${articles.length} 篇文章）`);
         
         return articles;
       } catch (error: any) {

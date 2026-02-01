@@ -49,6 +49,71 @@ export class BilibiliService {
   }
 
   /**
+   * 从环境变量获取代理配置
+   * 支持 HTTP_PROXY, HTTPS_PROXY, http_proxy, https_proxy, ALL_PROXY
+   */
+  private getProxyConfig(targetUrl: string): false | { protocol?: string; host: string; port: number; auth?: { username: string; password: string } } {
+    // 根据目标URL的协议选择代理环境变量
+    const isHttps = targetUrl.startsWith('https://');
+    
+    // 按优先级查找代理环境变量
+    const proxyEnvVars = isHttps 
+      ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy']
+      : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
+    
+    let proxyUrl: string | undefined;
+    for (const envVar of proxyEnvVars) {
+      proxyUrl = process.env[envVar];
+      if (proxyUrl) break;
+    }
+
+    // 检查是否在 NO_PROXY 列表中
+    const noProxy = process.env.NO_PROXY || process.env.no_proxy;
+    if (noProxy) {
+      const noProxyList = noProxy.split(',').map(s => s.trim());
+      const urlHostname = new URL(targetUrl).hostname;
+      if (noProxyList.some(pattern => {
+        if (pattern === '*') return true;
+        if (pattern.startsWith('.')) return urlHostname.endsWith(pattern);
+        return urlHostname === pattern;
+      })) {
+        return false; // 不使用代理
+      }
+    }
+
+    if (!proxyUrl) {
+      return false; // 没有代理配置
+    }
+
+    try {
+      // 解析代理URL
+      const url = new URL(proxyUrl);
+      const config: any = {
+        host: url.hostname,
+        port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80)
+      };
+
+      // 如果代理URL包含协议，添加protocol字段
+      if (url.protocol) {
+        config.protocol = url.protocol.replace(':', '');
+      }
+
+      // 如果有用户名和密码
+      if (url.username || url.password) {
+        config.auth = {
+          username: url.username || '',
+          password: url.password || ''
+        };
+      }
+
+      return config;
+    } catch (error) {
+      LogService.warn(`代理URL解析失败: ${proxyUrl}`, 'BilibiliService');
+      return false;
+    }
+  }
+
+  /**
    * 检查biliup是否已安装
    */
   async checkBiliupInstalled(): Promise<boolean> {
@@ -433,6 +498,7 @@ export class BilibiliService {
   /**
    * 下载封面图片（用于B站上传）
    * 带缓存功能：相同URL的图片不会重复下载
+   * 支持 V2Ray/SOCKS5 代理（使用 yt-dlp 下载）
    */
   async downloadCoverImage(
     imageUrl: string,
@@ -456,36 +522,119 @@ export class BilibiliService {
       // 检查缓存是否存在且有效
       if (fs.existsSync(cachedPath)) {
         const stats = fs.statSync(cachedPath);
-        if (stats.size > 0) {
-          LogService.log(`使用缓存的封面图片: ${(stats.size / 1024).toFixed(2)} KB`, 'BilibiliService');
+        // 封面图片至少应该有1KB，否则可能是损坏的缓存
+        if (stats.size > 1024) {
+          LogService.log(`✓ 使用缓存的封面图片: ${(stats.size / 1024).toFixed(2)} KB`, 'BilibiliService');
           return cachedPath;
+        } else {
+          LogService.warn(`缓存的封面图片可能已损坏（大小: ${stats.size} bytes），将重新下载`, 'BilibiliService');
+          // 删除损坏的缓存文件
+          try {
+            fs.unlinkSync(cachedPath);
+          } catch (err) {
+            LogService.warn(`删除损坏的缓存文件失败: ${err}`, 'BilibiliService');
+          }
         }
       }
 
-      LogService.log(`开始下载封面图片: ${imageUrl.substring(0, 80)}...`, 'BilibiliService');
+      LogService.log(`开始下载封面图片（通过VPN代理）...`, 'BilibiliService');
+      
+      // 检查URL是否可访问（Notion临时URL检测）
+      if (imageUrl.includes('secure.notion-static.com') || imageUrl.includes('s3.us-west')) {
+        LogService.warn(`⚠️  检测到 Notion 临时 URL，此类URL有时效性（通常1小时）`, 'BilibiliService');
+      }
 
-      // 下载图片
-      const response = await axios.get(imageUrl, {
-        responseType: 'arraybuffer',
-        timeout: 30000, // 30秒超时
-        signal: abortSignal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'image/*,*/*;q=0.8',
+      // 使用 yt-dlp 下载图片（自动支持 SOCKS5/V2Ray 代理）
+      await this.downloadImageWithYtDlp(imageUrl, cachedPath, abortSignal);
+
+      // 验证下载的文件
+      if (!fs.existsSync(cachedPath)) {
+        throw new Error('下载的封面文件不存在');
+      }
+
+      const stats = fs.statSync(cachedPath);
+      if (stats.size < 1024) {
+        throw new Error(`下载的封面图片太小（${stats.size} bytes）`);
+      }
+
+      LogService.success(`✓ 封面图片下载完成: ${(stats.size / 1024).toFixed(2)} KB (已缓存)`, 'BilibiliService');
+      return cachedPath;
+
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      LogService.error(`❌ 封面下载失败: ${errorMsg}`, 'BilibiliService');
+      LogService.log(`💡 将使用B站默认封面（视频第一帧），上传后可在B站后台手动修改`, 'BilibiliService');
+      throw new Error(`封面图片下载失败: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * 使用 curl 下载图片（自动支持系统代理，包括 SOCKS5/V2Ray）
+   */
+  private async downloadImageWithYtDlp(
+    imageUrl: string,
+    outputPath: string,
+    abortSignal?: AbortSignal
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Windows 10+ 内置 curl 命令
+      const args = [
+        '-L',              // 跟随重定向
+        '-s',              // 静默模式
+        '-S',              // 显示错误
+        '--max-time', '30', // 30秒超时
+        '-o', outputPath  // 输出文件
+      ];
+
+      // 检测并配置代理（支持 HTTP 和 SOCKS5）
+      const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+      const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+      const allProxy = process.env.ALL_PROXY || process.env.all_proxy;
+      
+      const isHttps = imageUrl.startsWith('https://');
+      const proxyUrl = isHttps ? (httpsProxy || allProxy || httpProxy) : (httpProxy || allProxy);
+      
+      if (proxyUrl) {
+        // curl 支持 socks5:// 协议前缀
+        // 如果代理是 http://，curl会自动处理
+        // 如果代理是 socks5://，curl也会正确处理
+        args.push('--proxy', proxyUrl);
+        LogService.log(`使用代理下载: ${proxyUrl.replace(/:\/\/.*@/, '://*****@')}`, 'BilibiliService');
+      }
+
+      args.push(imageUrl);
+
+      const curlProcess = spawn('curl', args, {
+        shell: true,
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+
+      curlProcess.stderr?.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      curlProcess.on('error', (error) => {
+        reject(new Error(`curl 执行失败: ${error.message}（请确保系统已安装curl）`));
+      });
+
+      curlProcess.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`curl 下载失败，退出码: ${code}${errorOutput ? `，错误: ${errorOutput}` : ''}`));
         }
       });
 
-      // 写入文件
-      fs.writeFileSync(cachedPath, response.data);
-
-      const stats = fs.statSync(cachedPath);
-      LogService.success(`封面图片下载完成: ${(stats.size / 1024).toFixed(2)} KB (已缓存)`, 'BilibiliService');
-
-      return cachedPath;
-    } catch (error) {
-      LogService.error('封面图片下载失败', 'BilibiliService', error);
-      throw error;
-    }
+      // 监听取消信号
+      if (abortSignal) {
+        abortSignal.addEventListener('abort', () => {
+          curlProcess.kill('SIGTERM');
+          reject(new Error('下载已取消'));
+        });
+      }
+    });
   }
 
   /**
@@ -976,14 +1125,16 @@ export class BilibiliService {
             LogService.log('封面图片是 URL，正在下载到本地...', 'BilibiliService');
             const localCoverPath = await this.downloadCoverImage(finalMetadata.cover, abortSignal);
             args.push('--cover', localCoverPath);
-            LogService.log(`使用本地封面图片: ${localCoverPath}`, 'BilibiliService');
+            LogService.log(`✓ 使用本地封面图片: ${localCoverPath}`, 'BilibiliService');
           } else {
             // 已经是本地路径，直接使用
             args.push('--cover', finalMetadata.cover);
+            LogService.log(`✓ 使用本地封面图片: ${finalMetadata.cover}`, 'BilibiliService');
           }
         } catch (error) {
-          LogService.error(`封面图片下载失败: ${error instanceof Error ? error.message : String(error)}`, 'BilibiliService');
-          LogService.warn('将不使用封面图片', 'BilibiliService');
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          LogService.warn(`封面图片处理失败: ${errorMsg}`, 'BilibiliService');
+          LogService.log('ℹ️  将使用B站默认封面（视频第一帧）', 'BilibiliService');
           // 不抛出错误，继续上传（没有封面图片）
         }
       }

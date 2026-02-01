@@ -75,27 +75,20 @@ export class SyncService {
   }
 
   /**
-   * 按微信接口要求限制标题长度（按 UTF-8 字节数截断）
+   * 按微信接口要求限制标题长度（按字符数截断）
    * 并过滤不支持的特殊字符和emoji
-   * 说明：微信图文标题限制大约 64 字节，这里使用 64 作为安全上限
+   * 说明：微信图文标题限制为 64 字符（按字符数，非字节），与 WeChatService.cutTextForWeChat 一致
    */
-  private cutWeChatTitle(rawTitle: string, maxBytes: number = 64): string {
+  private cutWeChatTitle(rawTitle: string, maxChars: number = 64): string {
     if (!rawTitle) return '';
 
     // 先过滤不支持的特殊字符和emoji
-    let cleanedTitle = this.filterWeChatUnsupportedChars(rawTitle);
-    
-    let bytes = 0;
-    let result = '';
+    const cleanedTitle = this.filterWeChatUnsupportedChars(rawTitle);
 
-    for (const ch of cleanedTitle) {
-      const len = Buffer.byteLength(ch, 'utf8');
-      if (bytes + len > maxBytes) {
-        break;
-      }
-      bytes += len;
-      result += ch;
-    }
+    // 按字符数截断（中文、英文等均计为 1 字符）
+    const result = cleanedTitle.length <= maxChars
+      ? cleanedTitle
+      : cleanedTitle.substring(0, maxChars);
 
     // 如果被截断或过滤，记录日志
     if (result.length < rawTitle.length || cleanedTitle.length < rawTitle.length) {

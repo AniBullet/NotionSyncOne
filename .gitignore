@@ -4,6 +4,9 @@ pnpm-lock.yaml
 package-lock.json
 yarn.lock
 
+# 本地配置（由 run-setup.js 生成）
+.npmrc
+
 # 构建输出
 dist/
 out/

@@ -66,7 +66,7 @@ node run-dev.js
 **可选（按需）：**
 - 微信公众号 AppID/AppSecret
 - WordPress 应用密码
-- biliup-rs + FFmpeg（B站投稿）
+- biliup + FFmpeg（B站投稿）
 
 </details>
 
@@ -241,8 +241,8 @@ node run-dev.js
 **Windows 用户**（推荐使用 winget）：
 
 ```bash
-# 安装 biliup-rs（B站上传工具）
-winget install biliup
+# 安装 biliup（B站上传工具）
+winget install -e --id ForgQi.biliup-rs
 
 # 安装 FFmpeg（视频处理工具）
 winget install BtbN.FFmpeg.GPL
@@ -250,7 +250,7 @@ winget install BtbN.FFmpeg.GPL
 
 **手动安装**：
 
-- biliup-rs：[https://github.com/biliup/biliup-rs](https://github.com/biliup/biliup-rs/releases)
+- biliup：[https://github.com/biliup/biliup](https://github.com/biliup/biliup/releases)（旧仓库 biliup-rs 已归档）
 - FFmpeg：[https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
 
 安装后确保命令可用：
@@ -404,7 +404,7 @@ pnpm check:lint          # 代码规范检查
 <summary><b>❌ B站投稿失败？</b></summary>
 
 **可能原因**：
-1. `biliup-rs` 或 `FFmpeg` 未安装
+1. `biliup` 或 `FFmpeg` 未安装
 2. Cookie 过期需要重新登录
 3. 视频格式不支持或超过大小限制
 

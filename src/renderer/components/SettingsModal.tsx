@@ -646,7 +646,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                   {/* 简洁的说明链接 */}
                   <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
                     💡 需先安装 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>biliup</code> 和 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>ffmpeg</code>
-                    （如已运行 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>setup.ps1</code>，请重启应用），
+                    （安装后请重启应用），
                     <a
                       href="#"
                       onClick={(e) => { e.preventDefault(); window.electron.openExternal('https://github.com/AniBullet/NotionSyncOne/blob/main/docs/BILIBILI_GUIDE.md'); }}

@@ -130,8 +130,13 @@ try {
   execSync('biliup --version', { stdio: 'pipe' });
   console.log('      ✓ biliup 已安装');
 } catch {
-  console.log('      ⚠ biliup 未安装（如需B站功能请安装）');
-  console.log('      安装: winget install biliup');
+  console.log('      未找到 biliup，尝试自动安装...');
+  try {
+    execSync('winget install -e --id ForgQi.biliup-rs --accept-package-agreements --accept-source-agreements', { stdio: 'inherit' });
+    console.log('      ✓ biliup 安装成功');
+  } catch {
+    console.log('      ⚠ winget 安装失败（应用内使用时会自动下载，无需担心）');
+  }
 }
 console.log('');
 
@@ -140,8 +145,14 @@ try {
   execSync('yt-dlp --version', { stdio: 'pipe' });
   console.log('      ✓ yt-dlp 已安装');
 } catch {
-  console.log('      ⚠ yt-dlp 未安装（如需下载外部视频请安装）');
-  console.log('      安装: winget install yt-dlp.yt-dlp');
+  console.log('      未找到 yt-dlp，尝试自动安装...');
+  try {
+    execSync('winget install -e --id yt-dlp.yt-dlp --accept-package-agreements --accept-source-agreements', { stdio: 'inherit' });
+    console.log('      ✓ yt-dlp 安装成功');
+  } catch {
+    console.log('      ⚠ winget 安装失败，如需下载外部视频请手动安装');
+    console.log('      手动安装: winget install yt-dlp.yt-dlp');
+  }
 }
 console.log('');
 
@@ -150,8 +161,14 @@ try {
   execSync('ffmpeg -version', { stdio: 'pipe' });
   console.log('      ✓ FFmpeg 已安装');
 } catch {
-  console.log('      ⚠ FFmpeg 未安装（如需视频压缩请安装）');
-  console.log('      安装: winget install Gyan.FFmpeg');
+  console.log('      未找到 FFmpeg，尝试自动安装...');
+  try {
+    execSync('winget install -e --id Gyan.FFmpeg --accept-package-agreements --accept-source-agreements', { stdio: 'inherit' });
+    console.log('      ✓ FFmpeg 安装成功');
+  } catch {
+    console.log('      ⚠ winget 安装失败，如需视频压缩请手动安装');
+    console.log('      手动安装: winget install Gyan.FFmpeg');
+  }
 }
 console.log('');
 

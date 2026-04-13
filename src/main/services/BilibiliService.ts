@@ -19,10 +19,15 @@ import { logger } from '../utils/logger';
 const MAX_VIDEO_SIZE = 8 * 1024 * 1024 * 1024; // 8GB
 const MAX_VIDEO_SIZE_8K = 16 * 1024 * 1024 * 1024; // 16GB（8K视频）
 
+// biliup 自动下载配置
+const BILIUP_GITHUB_API = 'https://api.github.com/repos/biliup/biliup-rs/releases/latest';
+const BILIUP_FALLBACK_URL = 'https://github.com/biliup/biliup-rs/releases/download/v0.2.4/biliupR-v0.2.4-x86_64-windows.zip';
+
 export class BilibiliService {
   private configService: ConfigService;
   private tempDir: string;
-  private biliupPath: string = 'biliup'; // 默认使用系统PATH中的biliup
+  private toolsDir: string;
+  private biliupPath: string = 'biliup';
   
   // 进度更新辅助方法
   private sendProgress(phase: string, progress: number, title: string, articleId?: string) {
@@ -33,9 +38,13 @@ export class BilibiliService {
 
   constructor(configService: ConfigService) {
     this.configService = configService;
-    // 使用系统临时目录
     this.tempDir = path.join(app.getPath('temp'), 'notionsyncone-bilibili');
+    this.toolsDir = path.join(app.getPath('userData'), 'tools');
     this.ensureTempDir();
+    const found = this.findBiliup();
+    if (found) {
+      this.biliupPath = found;
+    }
   }
 
   /**
@@ -266,17 +275,14 @@ export class BilibiliService {
    */
   async login(method: 'qrcode' | 'sms' | 'password' = 'qrcode'): Promise<void> {
     try {
-      const isInstalled = await this.checkBiliupInstalled();
-      if (!isInstalled) {
+      const isReady = await this.ensureBiliupInstalled();
+      if (!isReady) {
         throw new Error(
-          'biliup 未安装或不在 PATH 中\n\n' +
-          '解决方案：\n' +
-          '1. 如果刚运行过 setup.ps1 安装脚本，请【关闭并重新打开】应用程序\n' +
-          '2. 如果仍无法使用，请手动安装：\n' +
-          '   - Windows: winget install ForgQi.biliup-rs\n' +
-          '   - 或访问: https://github.com/biliup/biliup-rs/releases\n' +
-          '3. 安装后重启终端和应用\n\n' +
-          '详细说明请参考: docs/BILIBILI_GUIDE.md'
+          'biliup 自动安装失败\n\n' +
+          '请手动安装：\n' +
+          '   - Windows: winget install -e --id ForgQi.biliup-rs\n' +
+          '   - 或访问: https://github.com/biliup/biliup/releases\n' +
+          '安装后请【完全关闭并重新打开】应用程序'
         );
       }
 
@@ -670,11 +676,10 @@ export class BilibiliService {
       throw new Error(
         'yt-dlp 未安装或不在 PATH 中\n\n' +
         '解决方案：\n' +
-        '1. 如果刚运行过 setup.ps1 安装脚本，请【完全关闭并重新打开】应用程序\n' +
-        '2. 如果仍无法使用，请手动安装：\n' +
+        '1. 手动安装：\n' +
         '   - Windows: winget install yt-dlp.yt-dlp\n' +
         '   - 或访问: https://github.com/yt-dlp/yt-dlp/releases\n' +
-        '3. 安装后重启终端和应用\n\n' +
+        '2. 安装后请【完全关闭并重新打开】应用程序\n\n' +
         '提示：Windows 系统需要完全重启应用才能识别新安装的工具'
       );
     }
@@ -748,6 +753,177 @@ export class BilibiliService {
         });
       }
     });
+  }
+
+  /**
+   * 查找 biliup 可执行文件路径（WinGet 安装、手动解压等）
+   */
+  private findBiliup(): string | null {
+    const possiblePaths = [
+      // app 内置 tools 目录（自动下载位置，最高优先级）
+      path.join(this.toolsDir, 'biliup.exe'),
+      // WinGet 安装位置
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Packages', 'ForgQi.biliup-rs_Microsoft.Winget.Source_8wekyb3d8bbwe', 'biliup.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Links', 'biliup.exe'),
+      // 用户本地安装
+      path.join(process.env.USERPROFILE || '', '.local', 'bin', 'biliup.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'biliup', 'biliup.exe'),
+      // 系统安装
+      path.join(process.env.ProgramFiles || '', 'biliup', 'biliup.exe'),
+      // PATH 中（最后尝试）
+      'biliup'
+    ];
+
+    for (const p of possiblePaths) {
+      try {
+        if (p === 'biliup') {
+          const { execSync } = require('child_process');
+          try {
+            execSync('biliup --version', { stdio: 'pipe', windowsHide: true });
+            LogService.log('在 PATH 中找到 biliup', 'BilibiliService');
+            return 'biliup';
+          } catch {
+            continue;
+          }
+        } else if (fs.existsSync(p)) {
+          LogService.log(`找到 biliup: ${p}`, 'BilibiliService');
+          return p;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    LogService.error('未找到 biliup，已检查以下位置:', 'BilibiliService');
+    possiblePaths.forEach(p => LogService.error(`  - ${p}`, 'BilibiliService'));
+
+    return null;
+  }
+
+  /**
+   * 自动下载并安装 biliup 到 app 本地 tools 目录
+   * 返回安装后的可执行文件路径，失败返回 null
+   */
+  async downloadAndInstallBiliup(): Promise<string | null> {
+    const targetPath = path.join(this.toolsDir, 'biliup.exe');
+
+    if (fs.existsSync(targetPath)) {
+      LogService.log('biliup 已存在于 tools 目录', 'BilibiliService');
+      this.biliupPath = targetPath;
+      return targetPath;
+    }
+
+    if (!fs.existsSync(this.toolsDir)) {
+      fs.mkdirSync(this.toolsDir, { recursive: true });
+    }
+
+    LogService.log('开始自动下载 biliup...', 'BilibiliService');
+
+    let downloadUrl = BILIUP_FALLBACK_URL;
+
+    // 尝试从 GitHub API 获取最新版本
+    try {
+      const resp = await axios.get(BILIUP_GITHUB_API, {
+        timeout: 10000,
+        headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'NotionSyncOne' }
+      });
+      const assets: any[] = resp.data?.assets || [];
+      const winAsset = assets.find((a: any) =>
+        a.name && a.name.includes('x86_64-windows') && a.name.endsWith('.zip')
+      );
+      if (winAsset?.browser_download_url) {
+        downloadUrl = winAsset.browser_download_url;
+        LogService.log(`获取到最新版本: ${resp.data.tag_name}`, 'BilibiliService');
+      }
+    } catch {
+      LogService.warn('无法获取最新版本信息，使用备用下载地址', 'BilibiliService');
+    }
+
+    const zipPath = path.join(this.toolsDir, 'biliup-download.zip');
+
+    try {
+      // 下载 zip
+      LogService.log(`下载地址: ${downloadUrl}`, 'BilibiliService');
+      const response = await axios.get(downloadUrl, {
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        headers: { 'User-Agent': 'NotionSyncOne' },
+        onDownloadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            if (pct % 20 === 0) {
+              LogService.log(`biliup 下载进度: ${pct}%`, 'BilibiliService');
+            }
+          }
+        }
+      });
+
+      fs.writeFileSync(zipPath, Buffer.from(response.data));
+      LogService.log('下载完成，正在解压...', 'BilibiliService');
+
+      // 使用 PowerShell 解压（Windows 10+ 自带）
+      const extractDir = path.join(this.toolsDir, 'biliup-extract');
+      if (fs.existsSync(extractDir)) {
+        fs.rmSync(extractDir, { recursive: true, force: true });
+      }
+
+      const { execSync } = require('child_process');
+      execSync(
+        `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`,
+        { stdio: 'pipe', windowsHide: true, timeout: 30000 }
+      );
+
+      // 在解压目录中递归查找 biliup.exe
+      const found = this.findFileRecursive(extractDir, 'biliup.exe');
+      if (!found) {
+        throw new Error('解压后未找到 biliup.exe');
+      }
+
+      // 移动到 tools 目录
+      fs.copyFileSync(found, targetPath);
+      LogService.success(`biliup 安装成功: ${targetPath}`, 'BilibiliService');
+
+      // 清理临时文件
+      try {
+        fs.unlinkSync(zipPath);
+        fs.rmSync(extractDir, { recursive: true, force: true });
+      } catch { /* 清理失败不影响功能 */ }
+
+      this.biliupPath = targetPath;
+      return targetPath;
+    } catch (error) {
+      LogService.error('自动下载 biliup 失败', 'BilibiliService', error);
+      // 清理可能的残留文件
+      try { if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath); } catch { /* ignore */ }
+      return null;
+    }
+  }
+
+  private findFileRecursive(dir: string, filename: string): string | null {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const result = this.findFileRecursive(fullPath, filename);
+        if (result) return result;
+      } else if (entry.name.toLowerCase() === filename.toLowerCase()) {
+        return fullPath;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 确保 biliup 可用：先查找，找不到则自动下载
+   */
+  async ensureBiliupInstalled(): Promise<boolean> {
+    if (await this.checkBiliupInstalled()) {
+      return true;
+    }
+
+    LogService.log('biliup 未找到，尝试自动下载安装...', 'BilibiliService');
+    const installed = await this.downloadAndInstallBiliup();
+    return installed !== null;
   }
 
   /**
@@ -950,16 +1126,14 @@ export class BilibiliService {
     abortSignal?: AbortSignal
   ): Promise<BilibiliUploadResult> {
     try {
-      const isInstalled = await this.checkBiliupInstalled();
-      if (!isInstalled) {
+      const isReady = await this.ensureBiliupInstalled();
+      if (!isReady) {
         throw new Error(
-          'biliup 未安装或不在 PATH 中\n\n' +
-          '解决方案：\n' +
-          '1. 如果刚运行过 setup.ps1 安装脚本，请【关闭并重新打开】应用程序\n' +
-          '2. 如果仍无法使用，请手动安装：\n' +
-          '   - Windows: winget install biliup\n' +
+          'biliup 自动安装失败\n\n' +
+          '请手动安装：\n' +
+          '   - Windows: winget install -e --id ForgQi.biliup-rs\n' +
           '   - 或访问: https://github.com/biliup/biliup/releases\n' +
-          '3. 安装后重启终端和应用'
+          '安装后请【完全关闭并重新打开】应用程序'
         );
       }
 

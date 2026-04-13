@@ -345,12 +345,26 @@ export function setupIpcHandlers(
   // 检查 biliup 是否安装 - 允许在服务未初始化时检查
   ipcMain.handle('check-biliup-installed', async () => {
     if (!bilibiliService) {
-      // 临时创建服务来检查
       const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.checkBiliupInstalled();
     }
     return bilibiliService.checkBiliupInstalled();
+  });
+
+  // 确保 biliup 已安装（自动下载）
+  ipcMain.handle('ensure-biliup-installed', async () => {
+    try {
+      if (!bilibiliService) {
+        const { BilibiliService } = await import('../services/BilibiliService');
+        const tempBiliService = new BilibiliService(configService!);
+        return await tempBiliService.ensureBiliupInstalled();
+      }
+      return await bilibiliService.ensureBiliupInstalled();
+    } catch (error) {
+      LogService.error('自动安装 biliup 失败', 'IpcHandlers', error);
+      return false;
+    }
   });
 
   // 检查 FFmpeg 是否安装 - 允许在服务未初始化时检查

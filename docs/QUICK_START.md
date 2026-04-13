@@ -145,11 +145,11 @@ https://www.notion.so/workspace/abc123def456?v=789xyz
 <details>
 <summary><b>配置 Bilibili（视频投稿）</b></summary>
 
-**前置要求**：安装 `biliup-rs` 和 `FFmpeg`
+**前置要求**：安装 `biliup` 和 `FFmpeg`
 
 ```bash
 # Windows 用户
-winget install biliup
+winget install -e --id ForgQi.biliup-rs
 winget install BtbN.FFmpeg.GPL
 ```
 

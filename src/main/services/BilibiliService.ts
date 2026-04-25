@@ -123,6 +123,58 @@ export class BilibiliService {
   }
 
   /**
+   * 读取 Windows 系统代理设置（注册表 Internet Settings）
+   * 这是 Clash / V2Ray 等代理软件写入的真实代理地址，优先级高于环境变量
+   */
+  private getWindowsSystemProxy(): string | null {
+    try {
+      const { execSync } = require('child_process');
+
+      // 检查代理是否已启用
+      const enableResult = execSync(
+        'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable',
+        { encoding: 'utf-8', stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      ) as string;
+      const enableMatch = enableResult.match(/ProxyEnable\s+REG_DWORD\s+(\w+)/);
+      if (!enableMatch || parseInt(enableMatch[1], 16) !== 1) {
+        return null; // 系统代理未启用
+      }
+
+      // 读取代理地址
+      const serverResult = execSync(
+        'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer',
+        { encoding: 'utf-8', stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      ) as string;
+      const serverMatch = serverResult.match(/ProxyServer\s+REG_SZ\s+(.+)/);
+      if (!serverMatch) return null;
+
+      const proxyServer = serverMatch[1].trim();
+
+      // 处理多协议格式：http=127.0.0.1:10809;socks=127.0.0.1:10808
+      if (proxyServer.includes('=')) {
+        const parts = proxyServer.split(';');
+        const proxyMap: Record<string, string> = {};
+        for (const part of parts) {
+          const eqIdx = part.indexOf('=');
+          if (eqIdx !== -1) {
+            proxyMap[part.slice(0, eqIdx).trim()] = part.slice(eqIdx + 1).trim();
+          }
+        }
+        // 按优先级选择：https > http > socks
+        if (proxyMap['https']) return `http://${proxyMap['https']}`;
+        if (proxyMap['http']) return `http://${proxyMap['http']}`;
+        if (proxyMap['socks']) return `socks5://${proxyMap['socks']}`;
+        return null;
+      }
+
+      // 简单格式：127.0.0.1:10809
+      return `http://${proxyServer}`;
+    } catch {
+      return null; // 非 Windows 或注册表读取失败
+    }
+  }
+
+  /**
    * 检查biliup是否已安装
    */
   async checkBiliupInstalled(): Promise<boolean> {
@@ -592,20 +644,27 @@ export class BilibiliService {
         '-o', outputPath  // 输出文件
       ];
 
-      // 检测并配置代理（支持 HTTP 和 SOCKS5）
-      const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-      const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-      const allProxy = process.env.ALL_PROXY || process.env.all_proxy;
-      
-      const isHttps = imageUrl.startsWith('https://');
-      const proxyUrl = isHttps ? (httpsProxy || allProxy || httpProxy) : (httpProxy || allProxy);
-      
-      if (proxyUrl) {
-        // curl 支持 socks5:// 协议前缀
-        // 如果代理是 http://，curl会自动处理
-        // 如果代理是 socks5://，curl也会正确处理
-        args.push('--proxy', proxyUrl);
-        LogService.log(`使用代理下载: ${proxyUrl.replace(/:\/\/.*@/, '://*****@')}`, 'BilibiliService');
+      // 代理查找（与 downloadWithYtDlp 相同的三级优先级）：
+      //   1. 手动配置  2. 环境变量  3. Windows 系统代理
+      const curlBilibiliConfig = this.configService.getBilibiliConfig();
+      let curlProxy: string | null = null;
+
+      if (curlBilibiliConfig.proxy?.trim()) {
+        curlProxy = curlBilibiliConfig.proxy.trim();
+      } else {
+        const httpProxy = process.env.HTTPS_PROXY || process.env.https_proxy ||
+                          process.env.ALL_PROXY || process.env.all_proxy ||
+                          process.env.HTTP_PROXY || process.env.http_proxy;
+        if (httpProxy) {
+          curlProxy = httpProxy;
+        } else {
+          curlProxy = this.getWindowsSystemProxy();
+        }
+      }
+
+      if (curlProxy) {
+        args.push('--proxy', curlProxy);
+        LogService.log(`使用代理下载封面: ${curlProxy.replace(/:\/\/[^@]*@/, '://***@')}`, 'BilibiliService');
       }
 
       args.push(imageUrl);
@@ -698,15 +757,40 @@ export class BilibiliService {
         '--extractor-args', 'youtube:player_client=android_vr'  // android_vr 客户端不需要 PO Token
       ];
 
-      // 自动注入代理配置（yt-dlp 不读取系统代理环境变量）
-      const proxyConfig = this.getProxyConfig(url);
-      if (proxyConfig && typeof proxyConfig !== 'boolean') {
-        let proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.host}:${proxyConfig.port}`;
-        if (proxyConfig.auth) {
-          proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.auth.username}:${proxyConfig.auth.password}@${proxyConfig.host}:${proxyConfig.port}`;
+      // 代理注入（三级优先级）：
+      //   1. 手动配置（BilibiliConfig.proxy）
+      //   2. 进程环境变量（HTTPS_PROXY / ALL_PROXY 等）
+      //   3. Windows 系统代理（注册表 Internet Settings，Clash/V2Ray 写入此处）
+      const bilibiliConfig = this.configService.getBilibiliConfig();
+      let resolvedProxy: string | null = null;
+      let proxySource = '';
+
+      if (bilibiliConfig.proxy && bilibiliConfig.proxy.trim()) {
+        resolvedProxy = bilibiliConfig.proxy.trim();
+        proxySource = '手动配置';
+      } else {
+        const envProxy = this.getProxyConfig(url);
+        if (envProxy && typeof envProxy !== 'boolean') {
+          let proxyUrl = `${envProxy.protocol || 'http'}://${envProxy.host}:${envProxy.port}`;
+          if (envProxy.auth) {
+            proxyUrl = `${envProxy.protocol || 'http'}://${envProxy.auth.username}:${envProxy.auth.password}@${envProxy.host}:${envProxy.port}`;
+          }
+          resolvedProxy = proxyUrl;
+          proxySource = '环境变量';
+        } else {
+          const sysProxy = this.getWindowsSystemProxy();
+          if (sysProxy) {
+            resolvedProxy = sysProxy;
+            proxySource = 'Windows系统代理';
+          }
         }
-        args.push('--proxy', proxyUrl);
-        LogService.log(`yt-dlp 使用代理: ${proxyUrl.replace(/:\/\/.*@/, '://***@')}`, 'BilibiliService');
+      }
+
+      if (resolvedProxy) {
+        args.push('--proxy', resolvedProxy);
+        LogService.log(`yt-dlp 使用代理 [${proxySource}]: ${resolvedProxy.replace(/:\/\/[^@]*@/, '://***@')}`, 'BilibiliService');
+      } else {
+        LogService.warn('yt-dlp 未检测到任何代理配置，直连下载（可能需要代理才能访问 YouTube）', 'BilibiliService');
       }
 
       const process = spawn(ytDlpPath, args, {
@@ -1247,8 +1331,15 @@ export class BilibiliService {
         LogService.log(`使用模板生成简介: ${finalDesc.substring(0, 100)}...`, 'BilibiliService');
       }
 
+      // B站标题限制 80 字符
+      const rawTitle = options.metadata.title || '未命名视频';
+      const bilibiliTitle = rawTitle.length > 80 ? rawTitle.slice(0, 79) + '…' : rawTitle;
+      if (rawTitle.length > 80) {
+        LogService.warn(`标题超过80字符（${rawTitle.length}），已自动截断: ${bilibiliTitle}`, 'BilibiliService');
+      }
+
       const finalMetadata = {
-        title: options.metadata.title || '未命名视频',
+        title: bilibiliTitle,
         tid: options.metadata.tid ?? config.defaultTid ?? 21,
         tags: options.metadata.tags?.length > 0 ? options.metadata.tags : (config.defaultTags || []),
         desc: finalDesc || '',

@@ -85,7 +85,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           noReprint: loadedConfig.bilibili?.noReprint ?? 0,
           openElec: loadedConfig.bilibili?.openElec ?? 0,
           upCloseReply: loadedConfig.bilibili?.upCloseReply ?? false,
-          upCloseDanmu: loadedConfig.bilibili?.upCloseDanmu ?? false
+          upCloseDanmu: loadedConfig.bilibili?.upCloseDanmu ?? false,
+          proxy: loadedConfig.bilibili?.proxy || ''
         }
       });
     } catch (err) {
@@ -126,11 +127,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           defaultTags: config.bilibili.defaultTags?.length ? config.bilibili.defaultTags.filter(t => t.trim()).map(t => t.trim()) : undefined,
           descTemplate: config.bilibili.descTemplate?.trim(),
           titleTemplate: config.bilibili.titleTemplate?.trim() || undefined,
-          copyright: config.bilibili.copyright != null ? Number(config.bilibili.copyright) : undefined,
-          noReprint: config.bilibili.noReprint != null ? Number(config.bilibili.noReprint) : undefined,
-          openElec: config.bilibili.openElec != null ? Number(config.bilibili.openElec) : undefined,
+          copyright: config.bilibili.copyright != null ? Number(config.bilibili.copyright) as 1 | 2 : undefined,
+          noReprint: config.bilibili.noReprint != null ? Number(config.bilibili.noReprint) as 0 | 1 : undefined,
+          openElec: config.bilibili.openElec != null ? Number(config.bilibili.openElec) as 0 | 1 : undefined,
           upCloseReply: config.bilibili.upCloseReply != null ? config.bilibili.upCloseReply : undefined,
-          upCloseDanmu: config.bilibili.upCloseDanmu != null ? config.bilibili.upCloseDanmu : undefined
+          upCloseDanmu: config.bilibili.upCloseDanmu != null ? config.bilibili.upCloseDanmu : undefined,
+          proxy: config.bilibili.proxy?.trim() || undefined
         } : undefined
       };
 
@@ -603,7 +605,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                         </select>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                        <div>
+                        <label style={labelStyle}>
+                          下载代理 <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(可选)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={config.bilibili?.proxy || ''}
+                          onChange={e => handleChange('bilibili', 'proxy', e.target.value)}
+                          placeholder="留空自动检测，例如：http://127.0.0.1:10809"
+                          style={inputStyle}
+                        />
+                        <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                          用于 yt-dlp 下载 YouTube 等外链视频。支持 http:// 和 socks5:// 协议
+                        </p>
+                      </div>
+
+                    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
                           <input
                             type="checkbox"

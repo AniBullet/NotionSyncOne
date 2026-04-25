@@ -23,6 +23,10 @@ export interface BilibiliConfig {
   openElec?: 0 | 1;  // 0-关闭充电 1-开启充电
   upCloseReply?: boolean;  // 是否关闭评论
   upCloseDanmu?: boolean;  // 是否关闭弹幕
+
+  // 自定义代理URL（优先级最高，留空则自动检测）
+  // 示例：http://127.0.0.1:10809  或  socks5://127.0.0.1:10808
+  proxy?: string;
 }
 
 export interface BilibiliVideo {

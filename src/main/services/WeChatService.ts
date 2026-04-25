@@ -9,6 +9,13 @@ import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { logger } from '../utils/logger';
 
+/**
+ * 微信相关 HTTP 请求专用：显式关闭代理。
+ * 若继承系统环境里的 ALL_PROXY=socks5://，Node 版 axios 会与 http 代理栈不兼容，抛出 protocol mismatch。
+ * 微信公众平台 API 与配图流量应直连国内，通常也不应走翻墙代理。
+ */
+const wechatAxios = axios.create({ proxy: false });
+
 export class WeChatService {
   private configService: ConfigService;
   private baseUrl = 'https://api.weixin.qq.com/cgi-bin';
@@ -342,7 +349,7 @@ export class WeChatService {
       LogService.log('正在发送创建草稿请求...', 'WeChatService');
       let draftResponse;
       try {
-        draftResponse = await axios.post<WeChatResponse & { media_id?: string }>(draftUrl, articleData);
+        draftResponse = await wechatAxios.post<WeChatResponse & { media_id?: string }>(draftUrl, articleData);
         LogService.log(`创建草稿请求已发送，HTTP状态码: ${draftResponse.status}`, 'WeChatService');
       } catch (axiosError: any) {
         // axios 请求失败（网络错误、超时等）
@@ -430,13 +437,25 @@ export class WeChatService {
       logger.log('获取新的访问令牌...');
       const url = `${this.baseUrl}/token?grant_type=client_credential&appid=${config.appId}&secret=${config.appSecret}`;
       
-      const response = await axios.get<WeChatResponse & { access_token: string; expires_in: number }>(url);
-      logger.log('访问令牌获取成功，过期时间:', response.data.expires_in, '秒');
+      const response = await wechatAxios.get<WeChatResponse & { access_token: string; expires_in: number }>(url);
 
       if (response.data.errcode !== 0 && !response.data.access_token) {
         logger.error('获取访问令牌失败:', response.data);
+        // 40164: 未开启 IP 白名单则不会遇到；已开启时必须把本机【出口公网 IP】加入公众号后台白名单
+        if (response.data.errcode === 40164) {
+          const msg = response.data.errmsg || '';
+          const ipMatch = msg.match(/invalid ip\s+([\d.]+)/i);
+          const seenIp = ipMatch?.[1] || '（见下方微信返回信息）';
+          throw new Error(
+            `IP 未加入微信公众平台白名单（errcode 40164）\n\n` +
+            `微信识别到的本机出口 IP 约为：${seenIp}\n\n` +
+            `请在 微信公众平台 → 开发 → 基本配置 → IP 白名单 中添加上述 IP；若使用家宽/4G 等动态 IP，变更后需再次更新白名单。`
+          );
+        }
         throw new Error(`获取访问令牌失败: ${response.data.errmsg}`);
       }
+
+      logger.log('访问令牌获取成功，过期时间:', response.data.expires_in, '秒');
 
       // 更新配置
       const currentConfig = await this.configService.getConfig();
@@ -504,7 +523,7 @@ export class WeChatService {
       const proxiedUrl = `https://www.notion.so/image/${encodeURIComponent(imageUrl)}`;
       
       try {
-        const response = await axios.get(proxiedUrl, {
+        const response = await wechatAxios.get(proxiedUrl, {
           headers,
           responseType: 'arraybuffer',
           timeout: 15000,
@@ -522,7 +541,7 @@ export class WeChatService {
     
     // 直接下载（Notion 图片或代理失败后的尝试）
     try {
-      const response = await axios.get(imageUrl, {
+      const response = await wechatAxios.get(imageUrl, {
         headers,
         responseType: 'arraybuffer',
         timeout: 15000,
@@ -771,7 +790,7 @@ export class WeChatService {
 
       // 上传到微信
       logger.log('正在上传永久图片到微信...');
-      const response = await axios.post<WeChatResponse & { media_id: string; url?: string }>(
+      const response = await wechatAxios.post<WeChatResponse & { media_id: string; url?: string }>(
         url,
         formData,
         {
@@ -836,7 +855,7 @@ export class WeChatService {
       
       LogService.log(`正在提交发布请求...`, 'WeChatService');
       LogService.log(`media_id: ${mediaId}`, 'WeChatService');
-      const publishResponse = await axios.post<WeChatResponse>(publishUrl, publishData);
+      const publishResponse = await wechatAxios.post<WeChatResponse>(publishUrl, publishData);
    
       logger.log('发布草稿响应 - 错误码:', publishResponse.data.errcode);
       
@@ -886,7 +905,7 @@ export class WeChatService {
           // 检查发布状态
           logger.log('正在检查发布状态...');
           const statusUrl = `${this.baseUrl}/freepublish/get?access_token=${accessToken}`;
-          const statusResponse = await axios.post<WeChatResponse>(statusUrl, {
+          const statusResponse = await wechatAxios.post<WeChatResponse>(statusUrl, {
             publish_id: publishResponse.data.publish_id
           });
           

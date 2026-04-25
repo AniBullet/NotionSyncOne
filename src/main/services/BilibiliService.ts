@@ -698,6 +698,17 @@ export class BilibiliService {
         '--extractor-args', 'youtube:player_client=android_vr'  // android_vr 客户端不需要 PO Token
       ];
 
+      // 自动注入代理配置（yt-dlp 不读取系统代理环境变量）
+      const proxyConfig = this.getProxyConfig(url);
+      if (proxyConfig && typeof proxyConfig !== 'boolean') {
+        let proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.host}:${proxyConfig.port}`;
+        if (proxyConfig.auth) {
+          proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.auth.username}:${proxyConfig.auth.password}@${proxyConfig.host}:${proxyConfig.port}`;
+        }
+        args.push('--proxy', proxyUrl);
+        LogService.log(`yt-dlp 使用代理: ${proxyUrl.replace(/:\/\/.*@/, '://***@')}`, 'BilibiliService');
+      }
+
       const process = spawn(ytDlpPath, args, {
         shell: true,
         windowsHide: true

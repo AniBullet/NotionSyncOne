@@ -1,5 +1,3 @@
-import { PageObjectResponse, BlockObjectResponse, RichTextItemResponse } from '@notionhq/client/build/src/api-endpoints';
-
 export interface NotionConfig {
   apiKey: string;
   databaseId: string;
@@ -13,17 +11,19 @@ export interface NotionPage {
   properties: {
     [key: string]: {
       type: string;
-      rich_text?: Array<{ plain_text: string }>;
-      title?: Array<{ plain_text: string }>;
-      select?: { name: string };
+      rich_text?: Array<Record<string, unknown> & { plain_text: string }>;
+      title?: Array<Record<string, unknown> & { plain_text: string }>;
+      select?: { name: string } | null;
       multi_select?: Array<{ name: string }>;
-      date?: { start: string };
-      number?: number;
-      url?: string;
+      date?: { start: string } | null;
+      number?: number | null;
+      url?: string | null;
+      created_time?: string;
       files?: Array<{
-        type: 'file' | 'external';
-        file?: { url: string };
+        type?: 'file' | 'external';
+        file?: { url: string; expiry_time?: string };
         external?: { url: string };
+        name?: string;
       }>;
     };
   };
@@ -60,9 +60,11 @@ export interface NotionBlock {
       };
     }>;
     url?: string;
+    language?: string;
+    checked?: boolean;
     caption?: Array<{
       plain_text: string;
       href?: string | null;
     }>;
   };
-} 
+}

@@ -158,11 +158,11 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
   wpSyncStates,
   biliSyncStates,
   biliProgress,
-  hasWordPressConfig,
-  hasBilibiliConfig,
+  hasWordPressConfig: _hasWordPressConfig,
+  hasBilibiliConfig: _hasBilibiliConfig,
   selectedArticles,
   onToggleArticle,
-  onPreview
+  onPreview: _onPreview
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; url?: string } | null>(null);
 

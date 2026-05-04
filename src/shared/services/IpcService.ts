@@ -1,5 +1,4 @@
-import { IpcRequest, IpcResponse, IpcChannel } from '../types/ipc';
-import { NotionPage } from '../types/notion';
+import { IpcRequest, IpcChannel } from '../types/ipc';
 import { SyncState } from '../types/sync';
 import { Config } from '../types/config';
 import { NotionConfig } from '../types/notion';
@@ -243,4 +242,4 @@ export class IpcService {
   static async invoke(channel: string, ...args: any[]): Promise<any> {
     return window.electron.ipcRenderer.invoke(channel, ...args);
   }
-} 
+}

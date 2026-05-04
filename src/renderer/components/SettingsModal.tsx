@@ -43,7 +43,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const loadBilibiliUser = async () => {
     try {
       const userInfo = await window.electron.ipcRenderer.invoke('get-bilibili-user');
-      setBilibiliUser(userInfo);
+      setBilibiliUser(userInfo as { name: string; mid: string } | null);
     } catch (err) {
       console.error('加载B站用户信息失败:', err);
       setBilibiliUser(null);
@@ -483,8 +483,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                               // 登录成功，立即加载用户信息
                               await loadBilibiliUser();
                               setMessage({ type: 'success', text: '登录成功' });
-                            } catch (err: any) {
-                              const errorMsg = err?.message || '登录失败';
+                            } catch (err) {
+                              const errorMsg = err instanceof Error ? err.message : '登录失败';
                               setMessage({ type: 'error', text: errorMsg });
                               console.error('B站登录失败:', err);
                             } finally {
@@ -513,7 +513,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                                 await IpcService.bilibiliLogout();
                                 setBilibiliUser(null);
                                 setMessage({ type: 'success', text: '已退出登录' });
-                              } catch (err: any) {
+                              } catch {
                                 setMessage({ type: 'error', text: '退出失败' });
                               } finally {
                                 setTesting(null);

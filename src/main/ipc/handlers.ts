@@ -45,7 +45,7 @@ export function setupIpcHandlers(
         });
         
         notification.show();
-      } catch (error) {
+      } catch {
         // 使用对话框作为备选
         await dialog.showMessageBox({
           type: 'info',
@@ -191,7 +191,7 @@ export function setupIpcHandlers(
   });
 
   // 日志相关
-  ipcMain.handle('get-logs', async (event, filter?: { level?: string, source?: string, keyword?: string }) => {
+  ipcMain.handle('get-logs', async (event, filter?: { level?: 'info' | 'error' | 'warn' | 'success', source?: string, keyword?: string }) => {
     return LogService.getLogs(filter);
   });
 
@@ -345,7 +345,6 @@ export function setupIpcHandlers(
   // 检查 biliup 是否安装 - 允许在服务未初始化时检查
   ipcMain.handle('check-biliup-installed', async () => {
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.checkBiliupInstalled();
     }
@@ -356,7 +355,6 @@ export function setupIpcHandlers(
   ipcMain.handle('ensure-biliup-installed', async () => {
     try {
       if (!bilibiliService) {
-        const { BilibiliService } = await import('../services/BilibiliService');
         const tempBiliService = new BilibiliService(configService!);
         return await tempBiliService.ensureBiliupInstalled();
       }
@@ -371,7 +369,6 @@ export function setupIpcHandlers(
   ipcMain.handle('check-ffmpeg-installed', async () => {
     if (!bilibiliService) {
       // 临时创建服务来检查
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.checkFFmpegInstalled();
     }
@@ -395,7 +392,6 @@ export function setupIpcHandlers(
   ipcMain.handle('bilibili-login', async (event, method: 'qrcode' | 'sms' | 'password' = 'qrcode') => {
     // 如果服务未初始化，临时创建一个用于登录
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.login(method);
     }
@@ -405,7 +401,6 @@ export function setupIpcHandlers(
   // B站退出登录
   ipcMain.handle('bilibili-logout', async () => {
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.logout();
     }
@@ -470,4 +465,4 @@ export function setupIpcHandlers(
     bilibiliService.cleanup();
     return true;
   });
-} 
+}

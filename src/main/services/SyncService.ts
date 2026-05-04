@@ -9,15 +9,10 @@ import { WeChatArticle } from '../../shared/types/wechat';
 import { WordPressArticle } from '../../shared/types/wordpress';
 import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
-import { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import { themes, ThemeStyles } from '../../shared/types/theme';
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-
-interface RichText {
-  plain_text: string;
-}
 
 export class SyncService {
   private notionService: NotionService;
@@ -122,10 +117,11 @@ export class SyncService {
     // 移除其他可能导致问题的特殊字符
     // 保留：中文、英文、数字、常见标点符号
     // 移除：控制字符、特殊符号等
+    // eslint-disable-next-line no-control-regex
     filtered = filtered.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // 控制字符
     
     // 移除一些可能导致发布失败的特殊符号（根据实际情况调整）
-    filtered = filtered.replace(/[🎬🎥📺🎞️📹🎦🎭🎪🎨🎯🎲🎰🎳]/g, ''); // 常见的媒体相关emoji
+    filtered = filtered.replace(/[\u{1F3AC}\u{1F3A5}\u{1F4FA}\u{1F4F9}\u{1F3A6}\u{1F3AD}\u{1F3AA}\u{1F3A8}\u{1F3AF}\u{1F3B2}\u{1F3B0}\u{1F3B3}]\uFE0F?/gu, '');
     
     // 移除多余的空格
     filtered = filtered.replace(/\s+/g, ' ').trim();
@@ -174,11 +170,10 @@ export class SyncService {
   }
 
   // 将 rich_text 数组转换为 HTML
-  private convertRichTextToHtml(richText: Array<{ plain_text: string; href?: string | null; annotations?: any }>, theme?: ThemeStyles): string {
+  private convertRichTextToHtml(richText: Array<{ plain_text: string; href?: string | null; annotations?: any }>, _theme?: ThemeStyles): string {
     if (richText.length === 0) {
       return '';
     }
-    const currentTheme = theme || this.getCurrentTheme();
     
     const parts: string[] = [];
     
@@ -234,11 +229,9 @@ export class SyncService {
 
     // 2. 查找 Cover 属性（自定义属性）
     let coverProp = page.properties.Cover || page.properties['Cover'];
-    let propSource = 'Cover';
     if (!coverProp) {
       // 3. 如果没有 Cover，查找 MainImage
       coverProp = page.properties.MainImage || page.properties['Main Image'];
-      propSource = 'MainImage';
     }
     
     if (!coverProp) {
@@ -488,10 +481,8 @@ export class SyncService {
 
       // 记录文章属性信息（仅记录关键信息）
       const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
       // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
-      let mainImage = this.getCoverImageUrl(page);
+      const mainImage = this.getCoverImageUrl(page);
       if (mainImage) {
         LogService.log(`封面图片: ${mainImage.substring(0, 60)}...`, 'SyncService');
       }
@@ -652,7 +643,7 @@ export class SyncService {
     const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
     
     // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
-    let mainImage = this.getCoverImageUrl(page);
+    const mainImage = this.getCoverImageUrl(page);
     
     return this.convertToWeChatArticle(page, blocks, mainImage, linkStart);
   }
@@ -660,7 +651,7 @@ export class SyncService {
   /**
    * 从blocks中提取所有图片URL（不包括封面图，封面图会单独上传）
    */
-  private extractImageUrls(blocks: NotionBlock[], coverImageUrl?: string): string[] {
+  private extractImageUrls(blocks: NotionBlock[], _coverImageUrl?: string): string[] {
     const urls = new Set<string>();
     
     // 不添加封面图到这里，因为封面图会在 publishArticle 时单独上传
@@ -1033,7 +1024,7 @@ export class SyncService {
           let videoHtml = '';
           
           // YouTube 视频检测
-          const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+          const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\s]{11})/);
           if (youtubeMatch) {
             const videoId = youtubeMatch[1];
             videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
@@ -1728,7 +1719,7 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
         from,
         author,
         engine,
-        expectationsRate,
+        expectationsRate: expectationsRate ?? undefined,
         tags,
         addedTime,
         linkStart
@@ -1831,9 +1822,9 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
   async hasVideos(articleId: string): Promise<boolean> {
     try {
       return await this.notionService.hasVideos(articleId);
-    } catch (error) {
+    } catch {
       LogService.error('检查视频失败', 'SyncService');
       return false;
     }
   }
-} 
+}

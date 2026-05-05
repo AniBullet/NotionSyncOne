@@ -368,7 +368,7 @@ git commit -m "test: cover sync feature tag metadata"
 - Add or modify: `tests/sync-images.test.cjs`
 - Keep: existing `tests/sync-service.test.cjs` cover/image tests
 
-- [ ] **Step 1: Write helper tests first**
+- [x] **Step 1: Write helper tests first**
 
 Create `tests/sync-images.test.cjs` with coverage for:
 - page cover beats Cover property
@@ -377,7 +377,7 @@ Create `tests/sync-images.test.cjs` with coverage for:
 - file/external block image URL extraction
 - mapped uploaded image URL uses map value
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run:
 
@@ -387,7 +387,7 @@ node --test tests\sync-images.test.cjs
 
 Expected: fail because `src/main/services/sync/images.ts` does not exist yet.
 
-- [ ] **Step 3: Create image helper module**
+- [x] **Step 3: Create image helper module**
 
 Create exports:
 
@@ -399,7 +399,7 @@ export function resolveImageUrl(originalUrl: string, imageUrlMap?: Map<string, s
 
 Move logic from `SyncService.ts` with no behavior changes.
 
-- [ ] **Step 4: Replace SyncService methods with wrappers**
+- [x] **Step 4: Replace SyncService methods with wrappers**
 
 Keep private methods for compatibility:
 
@@ -413,7 +413,7 @@ private extractImageUrls(blocks: NotionBlock[], coverImageUrl?: string): string[
 }
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -424,7 +424,7 @@ npm.cmd run build:dir
 
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

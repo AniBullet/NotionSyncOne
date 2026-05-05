@@ -27,6 +27,7 @@ import {
 } from './sync/notionToHtml';
 import { SyncStateStore } from './sync/stateStore';
 import { syncArticleToWeChat } from './sync/wechatSync';
+import { syncArticleToWordPressFlow } from './sync/wordpressSync';
 import { app } from 'electron';
 import * as path from 'path';
 
@@ -557,119 +558,19 @@ export class SyncService {
     status: 'publish' | 'draft',
     abortSignal?: AbortSignal
   ): Promise<SyncState> {
-    const wpSyncKey = `wp_${articleId}`;
-    
-    try {
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      LogService.log('========== 开始同步文章到 WordPress ==========', 'SyncService');
-      LogService.log(`文章ID: ${articleId}`, 'SyncService');
-      LogService.log(`发布状态: ${status}`, 'SyncService');
-      this.updateSyncState(wpSyncKey, SyncStatus.SYNCING);
-
-      // 验证服务是否初始化
-      if (!this.notionService) {
-        throw new Error('Notion 服务未初始化');
-      }
-      if (!this.wordPressService) {
-        throw new Error('WordPress 服务未初始化，请先配置 WordPress 信息');
-      }
-
-      // 获取 Notion 文章内容
-      LogService.log('正在获取文章属性...', 'SyncService');
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取文章内容
-      LogService.log('正在获取文章内容...', 'SyncService');
-      const blocks = await this.notionService.getPageContent(articleId);
-      LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
-
-      if (!blocks || blocks.length === 0) {
-        throw new Error('文章内容为空');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取封面图片
-      const mainImage = this.getCoverImageUrl(page);
-      LogService.log(`========== WordPress 封面图片处理 ==========`, 'SyncService');
-      if (mainImage) {
-        LogService.log(`找到封面图片 URL: ${mainImage.substring(0, 80)}...`, 'SyncService');
-      } else {
-        LogService.warn(`未找到封面图片！请检查 Notion 页面是否设置了封面（Cover）`, 'SyncService');
-        LogService.warn(`支持的封面来源：1. 页面封面 2. Cover 属性 3. MainImage 属性`, 'SyncService');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 只上传封面图作为 WordPress 特色图片，文章内容使用外部图片链接
-      let featuredMediaId: number | undefined;
-      if (mainImage && this.wordPressService) {
-        try {
-          LogService.log('正在上传封面图片到 WordPress 媒体库...', 'SyncService');
-          LogService.log(`图片 URL: ${mainImage}`, 'SyncService');
-          const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
-          if (coverMedia && coverMedia.id) {
-            featuredMediaId = coverMedia.id;
-            LogService.success(`✓ 封面图片上传成功！`, 'SyncService');
-            LogService.success(`  media_id: ${coverMedia.id}`, 'SyncService');
-            LogService.success(`  source_url: ${coverMedia.source_url || '未返回'}`, 'SyncService');
-          } else {
-            LogService.error(`✗ 封面图片上传异常：API 返回数据缺少 id`, 'SyncService');
-            LogService.error(`  返回数据: ${JSON.stringify(coverMedia)}`, 'SyncService');
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          LogService.error(`✗ 封面图片上传失败: ${errorMsg}`, 'SyncService');
-          LogService.warn('文章将不设置特色图片（featured image）', 'SyncService');
-          // 如果是 Notion 临时 URL 过期，给出提示
-          if (mainImage.includes('secure.notion-static.com') || mainImage.includes('s3.us-west')) {
-            LogService.warn('提示：Notion 文件类型的图片 URL 有时效性，建议使用外部图片链接', 'SyncService');
-          }
-        }
-      } else if (!mainImage) {
-        LogService.warn('文章没有封面图片，将使用 WordPress 默认特色图片', 'SyncService');
-      }
-      
-      LogService.log(`featuredMediaId 最终值: ${featuredMediaId || '未设置'}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 转换文章格式（文章内图片直接使用外部 URL，不上传）
-      LogService.log('正在转换文章格式...', 'SyncService');
-      const wpArticle = this.convertToWordPressArticle(page, blocks, status, undefined, featuredMediaId);
-      LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
-      LogService.log(`文章 featured_media 字段: ${wpArticle.featured_media || '未设置'}`, 'SyncService');
-
-      // 发布到 WordPress
-      LogService.log(`========== 开始${status === 'publish' ? '发布' : '保存草稿'}到 WordPress ==========`, 'SyncService');
-      const post = await this.wordPressService.publishArticle(wpArticle, abortSignal);
-      
-      LogService.success(`========== WordPress ${status === 'publish' ? '发布' : '草稿保存'}成功 ==========`, 'SyncService');
-      LogService.log(`文章链接: ${post.link}`, 'SyncService');
-
-      const successState = this.updateSyncState(wpSyncKey, SyncStatus.SUCCESS);
-      return successState;
-    } catch (error) {
-      LogService.error('========== WordPress 同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncArticleToWordPressFlow(
+      {
+        notionService: this.notionService,
+        wordPressService: this.wordPressService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        convertToWordPressArticle: (page, blocks, wpStatus, imageUrlMap, featuredMediaId) =>
+          this.convertToWordPressArticle(page, blocks, wpStatus, imageUrlMap, featuredMediaId),
+        updateSyncState: (id, syncStatus, error, results) => this.updateSyncState(id, syncStatus, error, results),
+      },
+      articleId,
+      status,
+      abortSignal
+    );
   }
 
   /**

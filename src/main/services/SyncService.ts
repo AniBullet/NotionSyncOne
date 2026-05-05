@@ -17,6 +17,11 @@ import {
   filterWeChatUnsupportedChars as filterWeChatUnsupportedCharsHelper,
   SyncRichText,
 } from './sync/html';
+import {
+  extractImageUrls as extractImageUrlsHelper,
+  getCoverImageUrl as getCoverImageUrlHelper,
+  resolveImageUrl,
+} from './sync/images';
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -135,50 +140,7 @@ export class SyncService {
 
   // 获取封面图片 URL（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
   private getCoverImageUrl(page: NotionPage): string {
-    // 1. 优先使用页面的 cover 属性（Notion API 直接提供的封面）
-    if (page.cover) {
-      if (page.cover.type === 'external' && page.cover.external) {
-        return page.cover.external.url;
-      } else if (page.cover.type === 'file' && page.cover.file) {
-        const url = page.cover.file.url;
-        // 只在 Notion 临时 URL 时给出警告
-        if (url.includes('secure.notion-static.com') || url.includes('s3.us-west')) {
-          LogService.warn(`封面使用 Notion 临时 URL，可能会过期`, 'SyncService');
-        }
-        return url;
-      }
-    }
-
-    // 2. 查找 Cover 属性（自定义属性）
-    let coverProp = page.properties.Cover || page.properties['Cover'];
-    if (!coverProp) {
-      // 3. 如果没有 Cover，查找 MainImage
-      coverProp = page.properties.MainImage || page.properties['Main Image'];
-    }
-    
-    if (!coverProp) {
-      return '';
-    }
-    
-    // 处理不同类型的属性
-    if (coverProp.type === 'files' && Array.isArray(coverProp.files)) {
-      const firstFile = coverProp.files[0];
-      if (firstFile) {
-        if (firstFile.type === 'file' && firstFile.file) {
-          return firstFile.file.url;
-        } else if (firstFile.type === 'external' && firstFile.external) {
-          return firstFile.external.url;
-        }
-      }
-    } else if (coverProp.type === 'url' && coverProp.url) {
-      return coverProp.url;
-    } else if ((coverProp as any).url) {
-      return (coverProp as any).url;
-    } else if (coverProp.rich_text?.[0]?.plain_text) {
-      return coverProp.rich_text[0].plain_text;
-    }
-    
-    return '';
+    return getCoverImageUrlHelper(page);
   }
 
   // 加载同步状态
@@ -574,19 +536,7 @@ export class SyncService {
    * 从blocks中提取所有图片URL（不包括封面图，封面图会单独上传）
    */
   private extractImageUrls(blocks: NotionBlock[], _coverImageUrl?: string): string[] {
-    const urls = new Set<string>();
-    
-    // 不添加封面图到这里，因为封面图会在 publishArticle 时单独上传
-    // 这样可以避免重复上传封面图
-    
-    // 遍历blocks提取图片URL
-    for (const block of blocks) {
-      if (block.type === 'image' && block.content?.url) {
-        urls.add(block.content.url);
-      }
-    }
-    
-    return Array.from(urls);
+    return extractImageUrlsHelper(blocks, _coverImageUrl);
   }
 
   /**
@@ -873,13 +823,8 @@ export class SyncService {
         return `<h3 style="margin: 1.1em 0 0.6em 0; font-size: 1.2em; font-weight: 600; line-height: 1.4; color: #555; padding-left: 0.4em; border-left: 3px solid #95a5a6;">${htmlContent}</h3>`;
       }
       case 'image': {
-        let url = block.content?.url || '';
+        const url = resolveImageUrl(block.content?.url || '', imageUrlMap);
         const caption = block.content?.caption?.[0]?.plain_text || '';
-        
-        // **使用微信服务器URL替换原始URL**
-        if (url && imageUrlMap && imageUrlMap.has(url)) {
-          url = imageUrlMap.get(url)!;
-        }
         
         if (url) {
           // 转义URL中的特殊字符

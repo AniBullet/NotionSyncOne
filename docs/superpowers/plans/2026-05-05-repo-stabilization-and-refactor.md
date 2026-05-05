@@ -57,7 +57,7 @@
 - Existing: `src/main/services/sync/html.ts`
 - Existing: `tests/sync-html.test.cjs`
 
-- [ ] **Step 1: Confirm worktree is clean**
+- [x] **Step 1: Confirm worktree is clean**
 
 Run:
 
@@ -74,7 +74,7 @@ codex/extract-sync-html-tools
 
 No changed files should appear.
 
-- [ ] **Step 2: Push branch**
+- [x] **Step 2: Push branch**
 
 Run:
 
@@ -84,7 +84,7 @@ git push -u origin codex/extract-sync-html-tools
 
 Expected: branch pushed successfully.
 
-- [ ] **Step 3: Open PR**
+- [x] **Step 3: Open PR**
 
 Use the GitHub workflow or `gh pr create` if needed.
 

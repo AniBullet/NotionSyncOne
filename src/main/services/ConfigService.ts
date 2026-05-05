@@ -26,6 +26,7 @@ export class ConfigService {
   private configPath: string;
   private config: Config;
   private encryptionAvailable: boolean;
+  private initPromise: Promise<void>;
 
   constructor() {
     const userDataPath = app.getPath('userData');
@@ -47,7 +48,7 @@ export class ConfigService {
     }
 
     // 初始化配置
-    this.init().catch(error => {
+    this.initPromise = this.init().catch(error => {
       logger.error('初始化配置失败:', error);
     });
   }
@@ -248,7 +249,7 @@ export class ConfigService {
       
       if (needsMigration) {
         logger.log('⚠ 检测到明文配置，正在升级到加密存储...', 'ConfigService');
-        await this.saveConfig(this.config);
+        await this.writeConfigFile(this.config);
         logger.log('✓ 配置升级完成，敏感信息已加密保护', 'ConfigService');
       }
     } catch (error) {
@@ -285,10 +286,14 @@ export class ConfigService {
     return this.config;
   }
 
-  async saveConfig(newConfig: Config): Promise<void> {
+  async saveConfig(newConfig: Partial<Config>): Promise<void> {
     try {
+      await this.initPromise;
+
+      const nextConfig = this.deepMerge(this.config, newConfig);
+
       // 验证必填字段
-      this.validateConfig(newConfig);
+      this.validateConfig(nextConfig);
       
       // 保留已有的 token 信息（不被覆盖）
       const preservedToken = {
@@ -297,7 +302,7 @@ export class ConfigService {
       };
       
       // 深度合并配置
-      this.config = this.deepMerge(this.config, newConfig);
+      this.config = nextConfig;
       
       // 恢复 token 信息
       if (preservedToken.accessToken) {

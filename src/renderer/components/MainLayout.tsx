@@ -12,6 +12,7 @@ import { SyncTarget } from './SyncButton';
 import {
   getPlatformReadiness,
   getSyncActionState,
+  getSyncTargetDisplay,
   PlatformReadiness,
   WorkbenchReadiness
 } from '../utils/workbenchStatus';
@@ -359,31 +360,25 @@ const MainLayout: React.FC = () => {
       <button
         key={platform.key}
         onClick={() => !available && openSettingsTab(platform.settingsTab)}
+        aria-label={`${platform.label}: ${platform.summary}`}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '6px',
-          height: '26px',
-          padding: '0 9px',
+          justifyContent: 'center',
+          width: '28px',
+          height: '28px',
+          padding: 0,
           borderRadius: '8px',
           border: `1px solid ${available ? `${platform.accentColor}55` : 'var(--border-light)'}`,
           backgroundColor: available ? `${platform.accentColor}18` : 'var(--bg-tertiary)',
           color: available ? platform.accentColor : 'var(--text-secondary)',
           fontSize: '11px',
           cursor: available ? 'default' : 'pointer',
-          whiteSpace: 'nowrap'
+          fontWeight: 700
         }}
-        title={available ? `${platform.label} 可同步` : `打开${platform.label}设置`}
+        title={available ? `${platform.label}: ${platform.summary}` : `${platform.label}: ${platform.summary}，点击打开设置`}
       >
-        <span style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          backgroundColor: available ? platform.accentColor : 'var(--warning)',
-          flexShrink: 0
-        }} />
-        <span style={{ fontWeight: 600 }}>{platform.shortLabel}</span>
-        <span>{platform.summary}</span>
+        {platform.shortLabel}
       </button>
     );
   };
@@ -395,28 +390,30 @@ const MainLayout: React.FC = () => {
     const isOpen = openSyncMenu === target;
     const accent = platform.accentColor;
     const publishText = target === 'bilibili' ? '投稿' : '发布';
+    const display = getSyncTargetDisplay(target);
 
     return (
       <div key={target} style={{ position: 'relative', display: 'inline-block' }}>
         <button
           disabled={disabled}
           onClick={() => setOpenSyncMenu(prev => prev === target ? null : target)}
+          aria-label={display.ariaLabel}
           style={{
-            minWidth: '72px',
-            height: '32px',
-            padding: '0 12px',
+            width: '36px',
+            height: '36px',
+            padding: 0,
             borderRadius: '8px',
             border: disabled ? '1px solid var(--border-light)' : `1px solid ${accent}66`,
             backgroundColor: disabled ? 'var(--bg-tertiary)' : `${accent}18`,
             color: disabled ? 'var(--text-tertiary)' : accent,
-            fontSize: '12px',
+            fontSize: target === 'wordpress' ? '11px' : '13px',
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontWeight: 600,
+            fontWeight: 800,
             opacity: disabled ? 0.62 : 1
           }}
-          title={actionState.reason || `${platform.label} ${platform.summary}`}
+          title={actionState.reason || display.ariaLabel}
         >
-          {platform.shortLabel}
+          {display.compactLabel}
         </button>
         {isOpen && !disabled && (
           <div style={{
@@ -510,7 +507,7 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(7, 193, 96, 0.15)',
                 color: '#07C160'
               }}>
-                💬 {wechatSynced}
+                微 {wechatSynced}
               </span>
             )}
             {wpSynced > 0 && (
@@ -521,7 +518,7 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(33, 117, 155, 0.15)',
                 color: '#21759B'
               }}>
-                🌐 {wpSynced}
+                WP {wpSynced}
               </span>
             )}
             {biliSynced > 0 && (
@@ -532,7 +529,7 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(251, 114, 153, 0.15)',
                 color: '#FB7299'
               }}>
-                📹 {biliSynced}
+                B {biliSynced}
               </span>
             )}
           </div>
@@ -548,7 +545,7 @@ const MainLayout: React.FC = () => {
             paddingRight: '12px',
             borderRight: '1px solid var(--border-light)'
           }}>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
               {renderReadinessChip(platformReadiness.wechat)}
               {renderReadinessChip(platformReadiness.wordpress)}
               {renderReadinessChip(platformReadiness.bilibili)}
@@ -563,26 +560,30 @@ const MainLayout: React.FC = () => {
             onClick={() => loadData(true)}
             disabled={loading || refreshing}
             style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
+              width: '36px',
+              height: '36px',
+              padding: 0,
+              borderRadius: '8px',
               border: '1px solid var(--border-medium)',
               backgroundColor: 'transparent',
               color: 'var(--text-secondary)',
-              fontSize: '12px',
+              fontSize: '15px',
               cursor: (loading || refreshing) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              justifyContent: 'center'
             }}
+            title={refreshing ? '\u5237\u65b0\u4e2d' : loading ? '\u52a0\u8f7d\u4e2d' : '\u5237\u65b0\u6587\u7ae0'}
+            aria-label={refreshing ? '\u5237\u65b0\u4e2d' : loading ? '\u52a0\u8f7d\u4e2d' : '\u5237\u65b0\u6587\u7ae0'}
           >
-            {(loading || refreshing) ? '🔄' : '🔄'} {refreshing ? '刷新中' : loading ? '加载中' : '刷新'}
+            {String.fromCharCode(8635)}
           </button>
           
           <button
             onClick={() => setShowSettings(true)}
             style={{
-              width: '32px',
-              height: '32px',
+              width: '36px',
+              height: '36px',
               borderRadius: '8px',
               border: '1px solid var(--border-medium)',
               backgroundColor: 'transparent',
@@ -593,9 +594,10 @@ const MainLayout: React.FC = () => {
               alignItems: 'center',
               justifyContent: 'center'
             }}
-            title="设置"
+            title={'\u8bbe\u7f6e'}
+            aria-label={'\u6253\u5f00\u8bbe\u7f6e'}
           >
-            ⚙️
+            {String.fromCharCode(9881)}
           </button>
           
           <ThemeToggle />

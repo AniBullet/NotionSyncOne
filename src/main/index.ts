@@ -98,10 +98,10 @@ async function createWindow() {
     const iconPath = getIconPath();
     // 创建窗口
     mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      minWidth: 900,   // 最小宽度：确保界面不会过于拥挤
-      minHeight: 650,  // 最小高度：确保所有内容可见
+      width: 1360,
+      height: 860,
+      minWidth: 1100,  // 最小宽度：确保工具栏和卡片不会过于拥挤
+      minHeight: 700,  // 最小高度：确保设置弹窗和状态栏可见
       title: 'NotionSyncOne',
       icon: iconPath,
       webPreferences: {
@@ -231,4 +231,4 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
-}); 
+});

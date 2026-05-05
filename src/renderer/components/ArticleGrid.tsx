@@ -47,7 +47,7 @@ interface ArticleGridProps {
   onPreview?: (articleId: string) => void;
 }
 
-// Card sync status labels.
+// Compact sync status dots for dense article cards.
 const SyncBadges: React.FC<{
   wechatState?: SyncState;
   wpState?: SyncState;
@@ -58,19 +58,19 @@ const SyncBadges: React.FC<{
 
     let color = 'var(--text-tertiary)';
     let backgroundColor = 'var(--bg-tertiary)';
-    let statusText = '等待';
+    let statusText = '\u7b49\u5f85';
     if (state.status === SyncStatus.SUCCESS) {
       color = '#10B981';
       backgroundColor = 'rgba(16, 185, 129, 0.12)';
-      statusText = '已同步';
+      statusText = '\u5df2\u540c\u6b65';
     } else if (state.status === SyncStatus.FAILED) {
       color = '#EF4444';
       backgroundColor = 'rgba(239, 68, 68, 0.12)';
-      statusText = '失败';
+      statusText = '\u5931\u8d25';
     } else if (state.status === SyncStatus.SYNCING) {
       color = '#F59E0B';
       backgroundColor = 'rgba(245, 158, 11, 0.14)';
-      statusText = '同步中';
+      statusText = '\u540c\u6b65\u4e2d';
     }
 
     return (
@@ -79,28 +79,30 @@ const SyncBadges: React.FC<{
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '4px',
-          padding: '3px 7px',
-          borderRadius: '6px',
+          justifyContent: 'center',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
           backgroundColor,
-          fontSize: '10px',
+          fontSize: label === 'WP' ? '9px' : '10px',
           color,
-          fontWeight: '600',
-          maxWidth: '100%'
+          fontWeight: '700',
+          lineHeight: 1,
+          flexShrink: 0
         }}
+        aria-label={`${title}: ${statusText}`}
         title={state.error ? `${title}: ${statusText} - ${state.error}` : `${title}: ${statusText}`}
       >
         <span>{label}</span>
-        <span>{statusText}</span>
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      {getBadge(wechatState, '微信', '微信')}
+      {getBadge(wechatState, '\u5fae', '\u5fae\u4fe1')}
       {getBadge(wpState, 'WP', 'WordPress')}
-      {getBadge(biliState, 'B站', 'B站')}
+      {getBadge(biliState, 'B', 'B\u7ad9')}
     </div>
   );
 };

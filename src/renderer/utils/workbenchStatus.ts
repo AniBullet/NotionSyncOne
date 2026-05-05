@@ -106,3 +106,16 @@ export const getSyncActionState = (
 
   return { disabled: false, reason: '' };
 };
+
+export const getSyncTargetDisplay = (
+  target: SyncTarget
+): { compactLabel: string; ariaLabel: string } => {
+  const display = {
+    wechat: { compactLabel: '微', ariaLabel: '同步到微信' },
+    wordpress: { compactLabel: 'WP', ariaLabel: '同步到 WordPress' },
+    bilibili: { compactLabel: 'B', ariaLabel: '同步到 B站' },
+    both: { compactLabel: '全', ariaLabel: '同步到微信和 WordPress' }
+  } satisfies Record<SyncTarget, { compactLabel: string; ariaLabel: string }>;
+
+  return display[target];
+};

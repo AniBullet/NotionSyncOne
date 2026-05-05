@@ -5,7 +5,8 @@ require('ts-node/register/transpile-only');
 
 const {
   getPlatformReadiness,
-  getSyncActionState
+  getSyncActionState,
+  getSyncTargetDisplay
 } = require('../src/renderer/utils/workbenchStatus.ts');
 
 const baseConfig = {
@@ -81,5 +82,16 @@ test('all-platform sync requires wechat and wordpress only', () => {
   assert.deepEqual(getSyncActionState('both', readiness, 1), {
     disabled: false,
     reason: ''
+  });
+});
+
+test('sync target display metadata supports compact icon buttons', () => {
+  assert.deepEqual(getSyncTargetDisplay('wechat'), {
+    compactLabel: '微',
+    ariaLabel: '同步到微信'
+  });
+  assert.deepEqual(getSyncTargetDisplay('both'), {
+    compactLabel: '全',
+    ariaLabel: '同步到微信和 WordPress'
   });
 });

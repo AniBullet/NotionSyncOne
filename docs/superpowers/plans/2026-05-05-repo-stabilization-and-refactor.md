@@ -446,7 +446,7 @@ git commit -m "refactor: extract sync image helpers"
 - Keep: `src/main/services/sync/html.ts`
 - Keep: `src/main/services/sync/images.ts`
 
-- [ ] **Step 1: Write renderer tests**
+- [x] **Step 1: Write renderer tests**
 
 Create tests for:
 - paragraph/heading rich text rendering
@@ -455,7 +455,7 @@ Create tests for:
 - image caption escaping
 - file/video fallback rendering
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run:
 
@@ -465,7 +465,7 @@ node --test tests\notion-to-html.test.cjs
 
 Expected: fail because module does not exist yet.
 
-- [ ] **Step 3: Create renderer module**
+- [x] **Step 3: Create renderer module**
 
 Create exports:
 
@@ -486,11 +486,11 @@ export function convertBlockToHtml(
 
 Move logic from `SyncService.ts`; import helpers from `sync/html.ts` and `sync/images.ts`.
 
-- [ ] **Step 4: Replace SyncService renderer methods with wrappers**
+- [x] **Step 4: Replace SyncService renderer methods with wrappers**
 
 Keep current private methods as wrappers so existing callers and tests still work.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -501,7 +501,7 @@ npm.cmd run build:dir
 
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

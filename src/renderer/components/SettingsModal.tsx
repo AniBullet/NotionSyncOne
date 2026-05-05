@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { Config } from '../../shared/types/config';
 import { APP_VERSION, GITHUB_REPO } from '../../shared/constants';
+import { getSettingsSections, SettingsSectionStatus } from '../utils/settingsStatus';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const [testing, setTesting] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ checking: boolean; latest?: string; hasUpdate?: boolean }>({ checking: false });
   const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string } | null>(null);
+  const sectionStatus = getSettingsSections(config);
 
   useEffect(() => {
     if (isOpen) {
@@ -138,8 +140,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
 
       await IpcService.saveConfig(configToSave);
       
-      setMessage({ type: 'success', text: '配置已保存' });
-      setTimeout(() => setMessage(null), 2000);
+      setMessage({ type: 'success', text: '配置已保存，状态已刷新' });
+      setTimeout(() => setMessage(null), 2500);
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : '保存失败' });
     } finally {
@@ -252,11 +254,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   if (!isOpen) return null;
 
   const tabs = [
-    { id: 'notion' as const, label: 'Notion', icon: '📝' },
-    { id: 'wechat' as const, label: '微信', icon: '💬' },
-    { id: 'wordpress' as const, label: 'WP', icon: '🌐' },
-    { id: 'bilibili' as const, label: 'B站', icon: '📹' },
-    { id: 'about' as const, label: '关于', icon: 'ℹ️' },
+    { id: 'notion' as const, label: 'Notion' },
+    { id: 'wechat' as const, label: '微信' },
+    { id: 'wordpress' as const, label: 'WP' },
+    { id: 'bilibili' as const, label: 'B站' },
+    { id: 'about' as const, label: '关于' },
   ];
 
   const inputStyle: React.CSSProperties = {
@@ -296,6 +298,46 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     fontSize: '12px'
   };
 
+  const renderStatusDot = (section: SettingsSectionStatus) => (
+    <span style={{
+      width: '7px',
+      height: '7px',
+      borderRadius: '50%',
+      backgroundColor: section.ready ? section.accentColor : 'var(--warning)',
+      boxShadow: section.ready ? `0 0 0 3px ${section.accentColor}22` : 'none',
+      flexShrink: 0
+    }} />
+  );
+
+  const renderSectionSummary = (section: SettingsSectionStatus) => (
+    <button
+      key={section.key}
+      onClick={() => setActiveTab(section.key)}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '5px',
+        minWidth: 0,
+        padding: '10px 12px',
+        borderRadius: '8px',
+        border: activeTab === section.key ? `1px solid ${section.accentColor}66` : '1px solid var(--border-light)',
+        backgroundColor: activeTab === section.key ? `${section.accentColor}14` : 'var(--bg-secondary)',
+        cursor: 'pointer'
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+        {renderStatusDot(section)}
+        {section.label}
+      </span>
+      <span style={{ fontSize: '11px', color: section.ready ? section.accentColor : 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+        {section.summary}
+      </span>
+    </button>
+  );
+
+  const activeSection = activeTab !== 'about' ? sectionStatus[activeTab] : null;
+
   return (
     <div style={{
       position: 'fixed',
@@ -311,8 +353,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
       <div style={{
         position: 'relative',
         backgroundColor: 'var(--bg-primary)',
-        borderRadius: '12px',
-        width: '500px',
+        borderRadius: '8px',
+        width: '720px',
+        maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100vh - 32px)',
         overflow: 'hidden',
         boxShadow: '0 16px 32px rgba(0, 0, 0, 0.25)',
         zIndex: 1
@@ -338,7 +382,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                   gap: '4px'
                 }}
               >
-                <span style={{ fontSize: '11px' }}>{tab.icon}</span>
+                {tab.id !== 'about' && renderStatusDot(sectionStatus[tab.id])}
                 {tab.label}
               </button>
             ))}
@@ -347,7 +391,40 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
         </div>
 
         {/* 内容 */}
-        <div style={{ padding: '16px 24px' }}>
+        <div style={{ padding: '14px 20px 0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+            {renderSectionSummary(sectionStatus.notion)}
+            {renderSectionSummary(sectionStatus.wechat)}
+            {renderSectionSummary(sectionStatus.wordpress)}
+            {renderSectionSummary(sectionStatus.bilibili)}
+          </div>
+          {activeSection && (
+            <div style={{
+              marginTop: '10px',
+              padding: '9px 12px',
+              borderRadius: '8px',
+              border: `1px solid ${activeSection.ready ? `${activeSection.accentColor}44` : 'var(--border-light)'}`,
+              backgroundColor: activeSection.ready ? `${activeSection.accentColor}10` : 'var(--bg-secondary)',
+              color: activeSection.ready ? activeSection.accentColor : 'var(--text-secondary)',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <span>
+                <b>{activeSection.label}</b>：{activeSection.summary}
+              </span>
+              {!activeSection.ready && activeSection.missingFields.length > 0 && (
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  补齐后保存即可更新状态
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 24px', maxHeight: 'calc(100vh - 250px)', overflow: 'auto' }}>
           {activeTab === 'notion' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
@@ -763,13 +840,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
 
         {/* 底部 - 仅在配置页显示 */}
         {activeTab !== 'about' && (
-          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {message ? (
-              <span style={{ fontSize: '12px', color: message.type === 'success' ? '#6EE7B7' : '#FCA5A5' }}>
-                {message.type === 'success' ? '✓' : '✗'} {message.text}
-              </span>
-            ) : <span />}
-            <button onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+            <div style={{ minWidth: 0 }}>
+              {message ? (
+                <span style={{ fontSize: '12px', color: message.type === 'success' ? '#6EE7B7' : '#FCA5A5' }}>
+                  {message.type === 'success' ? '已完成' : '需要处理'}：{message.text}
+                </span>
+              ) : activeSection ? (
+                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                  当前页：{activeSection.summary}
+                </span>
+              ) : <span />}
+            </div>
+            <button onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
               {loading ? '保存中...' : '保存'}
             </button>
           </div>

@@ -64,6 +64,10 @@ function withElectronMock(userDataPath, run) {
     });
 }
 
+function getSavedConfigPath(userDataPath) {
+  return path.join(userDataPath, 'config', 'config.json');
+}
+
 test('ConfigService saves valid Notion config without requiring WeChat credentials', async () => {
   const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'nso-config-'));
   await withElectronMock(userDataPath, async () => {
@@ -139,5 +143,78 @@ test('ConfigService rejects missing Notion credentials', async () => {
       }),
       /Notion API Key|数据库|鏁版嵁/
     );
+  });
+});
+
+test('ConfigService reloads encrypted secrets as plaintext config values', async () => {
+  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'nso-config-'));
+  await withElectronMock(userDataPath, async () => {
+    const { ConfigService } = require('../src/main/services/ConfigService.ts');
+    const service = new ConfigService();
+
+    await service.saveConfig({
+      notion: {
+        apiKey: 'secret_'.padEnd(50, 'x'),
+        databaseId: '0123456789abcdef0123456789abcdef',
+      },
+      wechat: {
+        appId: 'wx-id',
+        appSecret: 'wx-secret',
+      },
+      bilibili: {
+        enabled: false,
+      },
+    });
+
+    const saved = JSON.parse(fs.readFileSync(getSavedConfigPath(userDataPath), 'utf8'));
+    assert.match(saved.notion.apiKey, /^\[encrypted\]/);
+    assert.match(saved.wechat.appId, /^\[encrypted\]/);
+    assert.match(saved.wechat.appSecret, /^\[encrypted\]/);
+
+    delete require.cache[require.resolve('../src/main/services/ConfigService.ts')];
+    const { ConfigService: FreshConfigService } = require('../src/main/services/ConfigService.ts');
+    const freshService = new FreshConfigService();
+    await freshService.init();
+
+    const loaded = await freshService.getConfig();
+    assert.equal(loaded.notion.apiKey, 'secret_'.padEnd(50, 'x'));
+    assert.equal(loaded.wechat.appId, 'wx-id');
+    assert.equal(loaded.wechat.appSecret, 'wx-secret');
+  });
+});
+
+test('ConfigService deep merges partial nested platform config', async () => {
+  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'nso-config-'));
+  await withElectronMock(userDataPath, async () => {
+    const { ConfigService } = require('../src/main/services/ConfigService.ts');
+    const service = new ConfigService();
+
+    await service.saveConfig({
+      notion: {
+        apiKey: 'secret_'.padEnd(50, 'x'),
+        databaseId: '0123456789abcdef0123456789abcdef',
+      },
+      wechat: {
+        appId: 'wx-id',
+        appSecret: 'wx-secret',
+      },
+      bilibili: {
+        enabled: true,
+        titleTemplate: 'old {title}',
+        defaultTags: ['notion', 'sync'],
+      },
+    });
+
+    await service.saveConfig({
+      bilibili: {
+        titleTemplate: 'new {title}',
+      },
+    });
+
+    const loaded = await service.getConfig();
+    assert.equal(loaded.bilibili.enabled, true);
+    assert.equal(loaded.bilibili.titleTemplate, 'new {title}');
+    assert.deepEqual(loaded.bilibili.defaultTags, ['notion', 'sync']);
+    assert.equal(loaded.wechat.appId, 'wx-id');
   });
 });

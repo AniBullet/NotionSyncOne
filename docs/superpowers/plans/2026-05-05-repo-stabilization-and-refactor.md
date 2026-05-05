@@ -188,7 +188,7 @@ If problems appear, create a short note:
 - Modify: `tests/config-service.test.cjs`
 - Read: `src/main/services/ConfigService.ts`
 
-- [ ] **Step 1: Write failing encryption/decryption test**
+- [x] **Step 1: Write failing encryption/decryption test**
 
 Add a test to `tests/config-service.test.cjs` that saves secrets, verifies disk values are encrypted, then creates a fresh `ConfigService` and verifies `getConfig()` returns decrypted values.
 
@@ -220,7 +220,7 @@ test('ConfigService reloads encrypted secrets as plaintext config values', async
 });
 ```
 
-- [ ] **Step 2: Run failing test**
+- [x] **Step 2: Run failing test**
 
 Run:
 
@@ -230,7 +230,7 @@ node --test tests\config-service.test.cjs
 
 Expected: either fail for missing behavior or pass if behavior already exists. If it passes, keep it as regression coverage.
 
-- [ ] **Step 3: Write deep merge test**
+- [x] **Step 3: Write deep merge test**
 
 Add a test that saves full config, then saves a partial nested update and confirms untouched nested platform config survives.
 
@@ -260,11 +260,11 @@ test('ConfigService deep merges partial nested platform config', async () => {
 });
 ```
 
-- [ ] **Step 4: Implement only if needed**
+- [x] **Step 4: Implement only if needed**
 
 If tests fail due to real behavior gaps, modify only `src/main/services/ConfigService.ts`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -275,7 +275,7 @@ npm.cmd run build:dir
 
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

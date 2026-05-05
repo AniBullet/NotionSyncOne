@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { NotionPage } from '../../shared/types/notion';
-import { RichTextItemResponse } from '@notionhq/client/build/src/api-endpoints';
 
 interface ArticleEditorProps {
   article: NotionPage;
@@ -116,4 +115,4 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   );
 };
 
-export default ArticleEditor; 
+export default ArticleEditor;

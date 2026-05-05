@@ -1,4 +1,4 @@
-interface LogEntry {
+export interface LogEntry {
   timestamp: number;
   level: 'info' | 'error' | 'warn' | 'success';
   message: string;
@@ -11,27 +11,33 @@ export class LogService {
   private static listeners: Set<(log: LogEntry) => void> = new Set();
   private static isDevelopment = process.env.NODE_ENV === 'development';
 
-  static log(message: string, source?: string) {
-    this.addLog('info', message, source);
+  static log(message: string, source?: string, details?: unknown) {
+    this.addLog('info', message, source, details);
   }
 
-  static error(message: string, source?: string) {
-    this.addLog('error', message, source);
+  static error(message: string, source?: string, details?: unknown) {
+    this.addLog('error', message, source, details);
   }
 
-  static warn(message: string, source?: string) {
-    this.addLog('warn', message, source);
+  static warn(message: string, source?: string, details?: unknown) {
+    this.addLog('warn', message, source, details);
   }
 
-  static success(message: string, source?: string) {
-    this.addLog('success', message, source);
+  static success(message: string, source?: string, details?: unknown) {
+    this.addLog('success', message, source, details);
   }
 
-  private static addLog(level: LogEntry['level'], message: string, source?: string) {
+  private static addLog(level: LogEntry['level'], message: string, source?: string, details?: unknown) {
+    const detailText = details instanceof Error
+      ? details.message
+      : details === undefined
+        ? ''
+        : String(details);
+    const fullMessage = detailText ? `${message}: ${detailText}` : message;
     const log: LogEntry = {
       timestamp: Date.now(),
       level,
-      message,
+      message: fullMessage,
       source
     };
 
@@ -52,7 +58,7 @@ export class LogService {
                            level === 'warn' ? console.warn : 
                            console.log;
       const prefix = source ? `[${source}]` : '';
-      consoleMethod(`${prefix} ${message}`);
+      consoleMethod(`${prefix} ${fullMessage}`);
     }
   }
 

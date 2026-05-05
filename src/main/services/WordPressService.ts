@@ -1,9 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
-import * as https from 'https';
-import * as http from 'http';
 import { Jimp } from 'jimp';
 import { 
-  WordPressConfig, 
   WordPressArticle, 
   WordPressCategory, 
   WordPressTag, 
@@ -20,6 +17,37 @@ const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 // 【测试开关】设置为 true 时跳过压缩，直接上传原图
 // 如果服务器有限制，建议设为 false 启用压缩
 const SKIP_COMPRESSION = false;
+
+type WordPressUser = {
+  id: number;
+  name?: string;
+  username?: string;
+};
+
+type WordPressPostPayload = {
+  title: string;
+  content: string;
+  status: WordPressArticle['status'];
+  comment_status: 'open';
+  ping_status: 'open';
+  excerpt?: string;
+  categories?: number[];
+  tags?: number[];
+  featured_media?: number;
+  author?: number;
+  slug?: string;
+  meta?: Record<string, unknown>;
+};
+
+type WordPressCategoryPayload = {
+  name: string;
+  parent?: number;
+};
+
+type ErrorWithCode = Error & {
+  code?: string;
+  name?: string;
+};
 
 export class WordPressService {
   private configService: ConfigService;
@@ -66,7 +94,7 @@ export class WordPressService {
   /**
    * 测试 WordPress 连接
    */
-  async testConnection(): Promise<{ success: boolean; message: string; user?: any }> {
+  async testConnection(): Promise<{ success: boolean; message: string; user?: WordPressUser }> {
     try {
       if (!this.client) {
         return { success: false, message: 'WordPress 服务未初始化，请检查配置' };
@@ -75,7 +103,7 @@ export class WordPressService {
       LogService.log('正在测试 WordPress 连接...', 'WordPressService');
       
       // 获取当前用户信息来验证连接
-      const response = await this.client.get('/users/me');
+      const response = await this.client.get<WordPressUser>('/users/me');
       
       if (response.data && response.data.id) {
         const userName = response.data.name || response.data.username;
@@ -88,7 +116,7 @@ export class WordPressService {
       }
 
       return { success: false, message: '无法获取用户信息' };
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = this.parseError(error);
       LogService.error(`WordPress 连接测试失败: ${errorMsg}`, 'WordPressService');
       return { success: false, message: errorMsg };
@@ -119,7 +147,7 @@ export class WordPressService {
       const config = this.configService.getWordPressConfig();
 
       // 构建请求数据
-      const postData: any = {
+      const postData: WordPressPostPayload = {
         title: article.title,
         content: article.content,
         status: article.status,
@@ -198,7 +226,7 @@ export class WordPressService {
       }
 
       throw new Error('发布失败：未返回文章 ID');
-    } catch (error: any) {
+    } catch (error) {
       // 如果是取消错误，直接抛出
       if (abortSignal?.aborted || (error instanceof Error && error.message.includes('已取消'))) {
         throw new Error('同步已取消');
@@ -290,7 +318,7 @@ export class WordPressService {
       }
 
       throw new Error('上传失败：未返回媒体 ID');
-    } catch (error: any) {
+    } catch (error) {
       // 如果是取消错误，直接抛出
       if (abortSignal?.aborted || (error instanceof Error && error.message.includes('已取消'))) {
         throw new Error('同步已取消');
@@ -358,7 +386,7 @@ export class WordPressService {
 
       // 设置质量（PNG 不支持质量参数，但不影响）
       if (!isPng) {
-        image.quality = level.quality;
+        (image as typeof image & { quality?: number }).quality = level.quality;
       }
 
       // 导出为原始格式的 Buffer
@@ -403,7 +431,7 @@ export class WordPressService {
       });
 
       return response.data || [];
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = this.parseError(error);
       LogService.error(`获取分类失败: ${errorMsg}`, 'WordPressService');
       throw new Error(`获取 WordPress 分类失败: ${errorMsg}`);
@@ -424,7 +452,7 @@ export class WordPressService {
       });
 
       return response.data || [];
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = this.parseError(error);
       LogService.error(`获取标签失败: ${errorMsg}`, 'WordPressService');
       throw new Error(`获取 WordPress 标签失败: ${errorMsg}`);
@@ -440,14 +468,14 @@ export class WordPressService {
         throw new Error('WordPress 服务未初始化');
       }
 
-      const data: any = { name };
+      const data: WordPressCategoryPayload = { name };
       if (parent) {
         data.parent = parent;
       }
 
       const response = await this.client.post<WordPressCategory>('/categories', data);
       return response.data;
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = this.parseError(error);
       throw new Error(`创建分类失败: ${errorMsg}`);
     }
@@ -464,7 +492,7 @@ export class WordPressService {
 
       const response = await this.client.post<WordPressTag>('/tags', { name });
       return response.data;
-    } catch (error: any) {
+    } catch (error) {
       const errorMsg = this.parseError(error);
       throw new Error(`创建标签失败: ${errorMsg}`);
     }
@@ -495,7 +523,7 @@ export class WordPressService {
       // 不存在则创建
       const newTag = await this.createTag(name);
       return newTag.id;
-    } catch (error: any) {
+    } catch (error) {
       LogService.warn(`查找或创建标签 "${name}" 失败: ${this.parseError(error)}`, 'WordPressService');
       throw error;
     }
@@ -523,9 +551,10 @@ export class WordPressService {
       });
 
       return Buffer.from(response.data);
-    } catch (error: any) {
+    } catch (error) {
+      const downloadError = error as ErrorWithCode;
       // 如果是取消错误，直接抛出
-      if (abortSignal?.aborted || error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+      if (abortSignal?.aborted || downloadError.name === 'CanceledError' || downloadError.code === 'ERR_CANCELED') {
         throw new Error('同步已取消');
       }
       
@@ -585,8 +614,8 @@ export class WordPressService {
   /**
    * 解析错误信息
    */
-  private parseError(error: any): string {
-    if (error.response) {
+  private parseError(error: unknown): string {
+    if (axios.isAxiosError(error) && error.response) {
       // 服务器返回了错误响应
       const data = error.response.data;
       if (data?.message) {
@@ -609,16 +638,18 @@ export class WordPressService {
       return `HTTP ${error.response.status}: ${error.response.statusText}`;
     }
     
-    if (error.code === 'ECONNREFUSED') {
+    const codedError = error as ErrorWithCode;
+
+    if (codedError.code === 'ECONNREFUSED') {
       return '无法连接到 WordPress 站点，请检查站点 URL';
     }
-    if (error.code === 'ENOTFOUND') {
+    if (codedError.code === 'ENOTFOUND') {
       return '找不到 WordPress 站点，请检查站点 URL';
     }
-    if (error.code === 'ETIMEDOUT') {
+    if (codedError.code === 'ETIMEDOUT') {
       return '连接超时，请检查网络或稍后重试';
     }
 
-    return error.message || '未知错误';
+    return codedError.message || '未知错误';
   }
 }

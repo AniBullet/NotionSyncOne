@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
 import { IpcService } from '../../shared/services/IpcService';
 import { APP_VERSION } from '../../shared/constants';
 import ArticleGrid from './ArticleGrid';
@@ -13,8 +14,6 @@ import iconUrl from '/icon.png';
 
 // 本地缓存 key
 const CACHE_KEY = 'notionsyncone_articles_cache';
-const CACHE_CONFIG_KEY = 'notionsyncone_config_cache';
-
 // 从 localStorage 读取缓存
 const loadCachedArticles = (): NotionPage[] => {
   try {
@@ -66,31 +65,32 @@ const MainLayout: React.FC = () => {
     checkUpdate();
     
     // 监听B站同步进度
-    const handleProgress = (_event: any, data: { phase: string; progress: number; title: string; articleId?: string }) => {
+    const handleProgress = (data: unknown) => {
+      const progressData = data as { phase: string; progress: number; title: string; articleId?: string };
       // 防御性检查：确保 data 存在且有必要字段
-      if (!data || data.phase === undefined || data.progress === undefined) {
+      if (!progressData || progressData.phase === undefined || progressData.progress === undefined) {
         return;
       }
       
       // 更新状态栏消息
-      const phaseText = data.phase === 'downloading' ? '📥 下载视频' : '📤 上传到B站';
-      setStatusMessage(`${phaseText}: ${data.progress.toFixed(1)}%`);
+      const phaseText = progressData.phase === 'downloading' ? '📥 下载视频' : '📤 上传到B站';
+      setStatusMessage(`${phaseText}: ${progressData.progress.toFixed(1)}%`);
       
       // 更新文章卡片进度
-      if (data.articleId) {
-        if (data.progress >= 100) {
+      if (progressData.articleId) {
+        if (progressData.progress >= 100) {
           // 完成后延迟清除进度
           setTimeout(() => {
             setBiliProgress(prev => {
               const newProgress = { ...prev };
-              delete newProgress[data.articleId!];
+              delete newProgress[progressData.articleId!];
               return newProgress;
             });
           }, 500);
         } else {
           setBiliProgress(prev => ({
             ...prev,
-            [data.articleId]: { phase: data.phase, progress: data.progress }
+            [progressData.articleId!]: { phase: progressData.phase, progress: progressData.progress }
           }));
         }
       }
@@ -101,6 +101,8 @@ const MainLayout: React.FC = () => {
     return () => {
       window.electron.ipcRenderer.removeListener('bilibili-sync-progress', handleProgress);
     };
+    // 初始加载只需要注册一次，刷新动作由按钮显式触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkUpdate = async () => {
@@ -253,7 +255,7 @@ const MainLayout: React.FC = () => {
           
           // 调用B站同步服务
           try {
-            const metadata: any = {
+            const metadata: BilibiliMetadata = {
               title: title,
               // desc 不在这里设置，让后端根据 descTemplate 配置自动生成
               // 使用默认配置
@@ -272,14 +274,14 @@ const MainLayout: React.FC = () => {
               failCount++;
               setStatusMessage(`⚠️ B站同步失败 [${i + 1}/${total}]: ${state.error || '未知错误'}`);
             }
-          } catch (error: any) {
-            const errorMsg = error?.message || 'B站同步失败';
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'B站同步失败';
             
             setBiliSyncStates(prev => ({ 
               ...prev, 
               [articleId]: { 
                 articleId: `bili_${articleId}`, 
-                status: SyncStatus.ERROR, 
+                status: SyncStatus.FAILED,
                 error: errorMsg 
               } 
             }));
@@ -304,7 +306,7 @@ const MainLayout: React.FC = () => {
       ? `✅ 全部成功！已同步 ${successCount} 篇文章` 
       : `⚠️ 部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇`;
     setStatusMessage(result);
-    await IpcService.showNotification('同步完成', result.replace(/[✅⚠️]/g, '').trim());
+    await IpcService.showNotification('同步完成', result.replace(/[✅⚠]/gu, '').replace(/\uFE0F/g, '').trim());
     
     // 清空选择
     setSelectedArticles(new Set());
@@ -313,7 +315,11 @@ const MainLayout: React.FC = () => {
   const handleToggleArticle = (id: string) => {
     setSelectedArticles(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };

@@ -9,6 +9,8 @@ export interface BilibiliConfig {
   defaultTid?: number;
   // 默认标签
   defaultTags?: string[];
+  // 默认合集/系列 ID
+  defaultSeasonId?: number;
   // 是否启用
   enabled?: boolean;
   

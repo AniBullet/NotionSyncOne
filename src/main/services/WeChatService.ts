@@ -2,9 +2,7 @@ import axios from 'axios';
 import * as https from 'https';
 import * as http from 'http';
 import * as zlib from 'zlib';
-import * as fs from 'fs';
-import * as path from 'path';
-import { WeChatConfig, WeChatArticle, WeChatResponse } from '../../shared/types/wechat';
+import { WeChatArticle, WeChatResponse } from '../../shared/types/wechat';
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
 import { logger } from '../utils/logger';
@@ -212,7 +210,7 @@ export class WeChatService {
         try {
           imageUrl = placeholderUrl;
           LogService.log(`获取到占位图片: ${imageUrl.substring(0, 50)}...`, 'WeChatService');
-        } catch (error) {
+        } catch {
           LogService.warn('获取占位图片失败，跳过封面图片', 'WeChatService');
           imageUrl = undefined;
         }
@@ -481,7 +479,7 @@ export class WeChatService {
     // 优先使用 axios 下载（支持更好的重定向和 cookie 处理）
     try {
       return await this.downloadImageWithAxios(imageUrl, abortSignal, maxRetries);
-    } catch (axiosError) {
+    } catch {
       // 如果 axios 失败，回退到原生 http
       LogService.warn('axios 下载失败，尝试使用原生 http', 'WeChatService');
       return await this.downloadImageWithHttp(imageUrl, abortSignal, maxRetries);
@@ -506,7 +504,7 @@ export class WeChatService {
   }
 
   // 使用 axios 下载图片（更好的兼容性）
-  private async downloadImageWithAxios(imageUrl: string, abortSignal?: AbortSignal, maxRetries: number = 3): Promise<Buffer> {
+  private async downloadImageWithAxios(imageUrl: string, abortSignal?: AbortSignal, _maxRetries: number = 3): Promise<Buffer> {
     const url = new URL(imageUrl);
     const hostname = url.hostname.toLowerCase();
     
@@ -533,7 +531,7 @@ export class WeChatService {
         const buffer = Buffer.from(response.data);
         LogService.log(`✓ 图片下载成功: ${buffer.length} 字节`, 'WeChatService');
         return buffer;
-      } catch (proxyError) {
+      } catch {
         // 代理失败，尝试直接下载一次
         LogService.warn(`代理失败，尝试直接下载...`, 'WeChatService');
       }
@@ -600,6 +598,7 @@ export class WeChatService {
             return;
           }
           const chunks: Buffer[] = [];
+          // eslint-disable-next-line prefer-const
           let timeoutId: NodeJS.Timeout;
           
           // 监听取消信号
@@ -944,4 +943,4 @@ export class WeChatService {
       throw error;
     }
   }
-} 
+}

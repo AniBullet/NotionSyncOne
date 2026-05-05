@@ -294,7 +294,7 @@ git commit -m "test: cover config encryption and deep merge"
 - Modify: `tests/sync-service.test.cjs`
 - Read: `src/main/services/SyncService.ts`
 
-- [ ] **Step 1: Write failing test for WeChat tag extraction**
+- [x] **Step 1: Write failing test for WeChat tag extraction**
 
 Add a test that calls the smallest currently accessible conversion method that includes `FeatureTag` in rendered article metadata. Prefer an existing helper already used by tests.
 
@@ -322,7 +322,7 @@ test('SyncService renders FeatureTag metadata for select and multi_select values
 
 If `createArticleInfo` is not accessible or has different parameters, adjust test to call `convertToWeChatArticle` through the existing dynamic private-method access pattern used in this test file.
 
-- [ ] **Step 2: Run failing/passing targeted test**
+- [x] **Step 2: Run failing/passing targeted test**
 
 Run:
 
@@ -332,11 +332,11 @@ node --test tests\sync-service.test.cjs
 
 Expected: test covers actual current behavior. If it already passes, keep as guardrail.
 
-- [ ] **Step 3: Implement only if behavior is missing**
+- [x] **Step 3: Implement only if behavior is missing**
 
 Modify only `src/main/services/SyncService.ts` if the test reveals a true gap.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -347,7 +347,7 @@ npm.cmd run build:dir
 
 Expected: both exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 

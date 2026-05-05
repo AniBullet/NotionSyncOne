@@ -25,9 +25,9 @@ import {
   convertBlockToHtml as convertBlockToHtmlHelper,
   convertBlocksToHtml as convertBlocksToHtmlHelper,
 } from './sync/notionToHtml';
+import { SyncStateStore } from './sync/stateStore';
 import { app } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
 
 export class SyncService {
   private notionService: NotionService;
@@ -35,8 +35,7 @@ export class SyncService {
   private wordPressService: WordPressService | null = null;
   private bilibiliService: BilibiliService | null = null;
   private configService: ConfigService;
-  private syncStates: { [key: string]: SyncState } = {};
-  private syncStateFile: string;
+  private syncStateStore: SyncStateStore;
   // 跟踪正在进行的同步操作，用于取消
   private activeSyncControllers: Map<string, AbortController> = new Map();
 
@@ -52,8 +51,7 @@ export class SyncService {
     this.configService = configService;
     this.wordPressService = wordPressService || null;
     this.bilibiliService = bilibiliService || null;
-    this.syncStateFile = path.join(app.getPath('userData'), 'sync-states.json');
-    this.loadSyncStates();
+    this.syncStateStore = new SyncStateStore(path.join(app.getPath('userData'), 'sync-states.json'));
   }
 
   /**
@@ -146,102 +144,31 @@ export class SyncService {
     return getCoverImageUrlHelper(page);
   }
 
-  // 加载同步状态
-  private loadSyncStates() {
-    try {
-      if (fs.existsSync(this.syncStateFile)) {
-        const data = fs.readFileSync(this.syncStateFile, 'utf8');
-        this.syncStates = JSON.parse(data);
-        
-        const totalStates = Object.keys(this.syncStates).length;
-        console.log(`已加载 ${totalStates} 个同步状态`);
-        
-        // 启动时自动重置所有 SYNCING 状态为 FAILED（程序重启意味着之前的同步已中断）
-        let resetCount = 0;
-        for (const [articleId, state] of Object.entries(this.syncStates)) {
-          if (state.status === SyncStatus.SYNCING) {
-            this.syncStates[articleId] = {
-              ...state,
-              status: SyncStatus.FAILED,
-              error: '同步中断：程序重启',
-              lastSyncTime: Date.now()
-            };
-            resetCount++;
-          }
-        }
-        if (resetCount > 0) {
-          console.log(`已重置 ${resetCount} 个卡住的同步状态`);
-          this.saveSyncStates();
-        }
-      }
-    } catch (error) {
-      console.error('加载同步状态失败:', error);
-      this.syncStates = {};
-    }
-  }
-
-  // 保存同步状态
-  private saveSyncStates() {
-    try {
-      fs.writeFileSync(this.syncStateFile, JSON.stringify(this.syncStates, null, 2));
-      // 精简日志：只在开发模式下输出详细信息
-      if (process.env.NODE_ENV === 'development') {
-        console.log('同步状态已保存');
-      }
-    } catch (error) {
-      console.error('保存同步状态失败:', error);
-    }
-  }
-
-  // 更新同步状态
   private updateSyncState(articleId: string, status: SyncStatus, error?: string, results?: SyncState['results']): SyncState {
-    // 保留之前的 results，如果有新的 results 则合并
-    const existingState = this.syncStates[articleId];
-    const state: SyncState = {
-      articleId,
-      status,
-      lastSyncTime: Date.now(),
-      error,
-      results: results ? { ...existingState?.results, ...results } : existingState?.results
-    };
-    this.syncStates[articleId] = state;
-    this.saveSyncStates();
-    return state;
+    return this.syncStateStore.update(articleId, status, error, results);
   }
 
-  // 获取同步状态
   getSyncState(articleId: string): SyncState | undefined {
-    return this.syncStates[articleId];
+    return this.syncStateStore.get(articleId);
   }
 
-  // 获取所有同步状态
   getAllSyncStates(): { [key: string]: SyncState } {
-    return this.syncStates;
+    return this.syncStateStore.getAll();
   }
 
-  // 重置卡住的同步状态（如果同步时间超过3分钟，自动重置为失败）
   resetStuckSyncStates(): void {
-    const stuckTimeout = 3 * 60 * 1000; // 3分钟
-    const now = Date.now();
-    
-    for (const [articleId, state] of Object.entries(this.syncStates)) {
-      if (state.status === SyncStatus.SYNCING && state.lastSyncTime) {
-        const elapsed = now - state.lastSyncTime;
-        if (elapsed > stuckTimeout) {
-          LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
-          this.updateSyncState(articleId, SyncStatus.FAILED, '同步超时：操作时间过长，已自动重置');
-          // 清理可能残留的 controller
-          this.activeSyncControllers.delete(articleId);
-        }
-      }
+    const stuckTimeout = 3 * 60 * 1000;
+    const resetArticleIds = this.syncStateStore.resetStuck(stuckTimeout);
+
+    for (const articleId of resetArticleIds) {
+      LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
+      this.activeSyncControllers.delete(articleId);
     }
   }
 
-  // 手动重置指定文章的同步状态
   resetSyncState(articleId: string): void {
     LogService.log(`手动重置文章同步状态: ${articleId}`, 'SyncService');
-    delete this.syncStates[articleId];
-    this.saveSyncStates();
+    this.syncStateStore.reset(articleId);
   }
 
   async syncArticle(articleId: string, publishMode: 'publish' | 'draft' = 'publish'): Promise<SyncState> {
@@ -313,7 +240,7 @@ export class SyncService {
     }
     
     // 如果没有找到 controller，检查同步状态
-    const currentState = this.syncStates[articleId];
+    const currentState = this.syncStateStore.get(articleId);
     if (currentState && currentState.status === SyncStatus.SYNCING) {
       // 状态显示正在同步，但没有 controller，可能是状态不同步
       LogService.warn(`文章 ${articleId} 状态显示为同步中，但未找到对应的 controller，强制更新状态为已取消`, 'SyncService');

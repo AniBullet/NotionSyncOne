@@ -47,43 +47,60 @@ interface ArticleGridProps {
   onPreview?: (articleId: string) => void;
 }
 
-// 同步状态徽章（显示在卡片上）
+// Card sync status labels.
 const SyncBadges: React.FC<{
   wechatState?: SyncState;
   wpState?: SyncState;
   biliState?: SyncState;
 }> = ({ wechatState, wpState, biliState }) => {
-  const getBadge = (state: SyncState | undefined, icon: string, title: string) => {
+  const getBadge = (state: SyncState | undefined, label: string, title: string) => {
     if (!state) return null;
-    
+
     let color = 'var(--text-tertiary)';
-    if (state.status === SyncStatus.SUCCESS) color = '#10B981';
-    else if (state.status === SyncStatus.FAILED) color = '#EF4444';
-    else if (state.status === SyncStatus.SYNCING) color = '#F59E0B';
-    
+    let backgroundColor = 'var(--bg-tertiary)';
+    let statusText = '等待';
+    if (state.status === SyncStatus.SUCCESS) {
+      color = '#10B981';
+      backgroundColor = 'rgba(16, 185, 129, 0.12)';
+      statusText = '已同步';
+    } else if (state.status === SyncStatus.FAILED) {
+      color = '#EF4444';
+      backgroundColor = 'rgba(239, 68, 68, 0.12)';
+      statusText = '失败';
+    } else if (state.status === SyncStatus.SYNCING) {
+      color = '#F59E0B';
+      backgroundColor = 'rgba(245, 158, 11, 0.14)';
+      statusText = '同步中';
+    }
+
     return (
-      <div 
+      <div
         key={title}
-        style={{ 
-          padding: '2px 6px', 
-          borderRadius: '4px',
-          backgroundColor: state.status === SyncStatus.SUCCESS ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+          padding: '3px 7px',
+          borderRadius: '6px',
+          backgroundColor,
           fontSize: '10px',
           color,
-          fontWeight: '500'
+          fontWeight: '600',
+          maxWidth: '100%'
         }}
-        title={`${title}: ${state.status === SyncStatus.SUCCESS ? '已同步' : state.status === SyncStatus.FAILED ? '失败' : '同步中...'}`}
+        title={state.error ? `${title}: ${statusText} - ${state.error}` : `${title}: ${statusText}`}
       >
-        {icon}
+        <span>{label}</span>
+        <span>{statusText}</span>
       </div>
     );
   };
 
   return (
-    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-      {getBadge(wechatState, '💬', '微信')}
+    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      {getBadge(wechatState, '微信', '微信')}
       {getBadge(wpState, 'WP', 'WordPress')}
-      {getBadge(biliState, '📹', 'B站')}
+      {getBadge(biliState, 'B站', 'B站')}
     </div>
   );
 };
@@ -172,9 +189,9 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
     setContextMenu({ x: e.clientX, y: e.clientY, url });
   };
 
-  if (loading) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}>加载中...</div>;
-  if (error) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '32px', marginBottom: '12px' }}>😕</div>{error}</div>;
-  if (!articles.length) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '32px', marginBottom: '12px' }}>📭</div>暂无文章</div>;
+  if (loading) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}>正在加载文章...</div>;
+  if (error) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--error)' }}>加载失败</div>{error}</div>;
+  if (!articles.length) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)' }}>暂无文章</div>检查 Notion 配置后刷新列表</div>;
 
   return (
     <div style={{ height: '100%', overflow: 'auto' }}>
@@ -202,7 +219,7 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
               onContextMenu={e => handleContextMenu(e, article.url)}
               style={{
                 backgroundColor: 'var(--bg-primary)',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 overflow: 'hidden',
                 border: sel ? '2px solid var(--primary-green)' : '1px solid var(--border-light)',
                 cursor: 'pointer',

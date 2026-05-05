@@ -112,6 +112,22 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button:focus-visible {
+  outline: 2px solid var(--primary-green);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* 滚动条样式 */
 ::-webkit-scrollbar {
   width: 8px;

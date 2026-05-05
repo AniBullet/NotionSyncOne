@@ -10,6 +10,13 @@ import { WordPressArticle } from '../../shared/types/wordpress';
 import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { themes, ThemeStyles } from '../../shared/types/theme';
+import {
+  convertRichTextToHtml as convertRichTextToHtmlHelper,
+  cutWeChatTitle as cutWeChatTitleHelper,
+  escapeHtml as escapeHtmlHelper,
+  filterWeChatUnsupportedChars as filterWeChatUnsupportedCharsHelper,
+  SyncRichText,
+} from './sync/html';
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -75,25 +82,7 @@ export class SyncService {
    * 说明：微信图文标题限制为 64 字符（按字符数，非字节），与 WeChatService.cutTextForWeChat 一致
    */
   private cutWeChatTitle(rawTitle: string, maxChars: number = 64): string {
-    if (!rawTitle) return '';
-
-    // 先过滤不支持的特殊字符和emoji
-    const cleanedTitle = this.filterWeChatUnsupportedChars(rawTitle);
-
-    // 按字符数截断（中文、英文等均计为 1 字符）
-    const result = cleanedTitle.length <= maxChars
-      ? cleanedTitle
-      : cleanedTitle.substring(0, maxChars);
-
-    // 如果被截断或过滤，记录日志
-    if (result.length < rawTitle.length || cleanedTitle.length < rawTitle.length) {
-      LogService.warn(
-        `标题已处理。原始: "${rawTitle}"，处理后: "${result}"`,
-        'SyncService'
-      );
-    }
-
-    return result;
+    return cutWeChatTitleHelper(rawTitle, maxChars);
   }
 
   /**
@@ -101,42 +90,12 @@ export class SyncService {
    * 微信公众号标题不支持大部分emoji和特殊符号
    */
   private filterWeChatUnsupportedChars(text: string): string {
-    if (!text) return '';
-    
-    // 移除emoji（包括常见的表情符号）
-    // Unicode emoji 范围：
-    // - Basic Emoji: U+1F300–U+1F6FF
-    // - Supplemental Symbols: U+1F900–U+1F9FF
-    // - Emoticons: U+1F600–U+1F64F
-    // - Misc Symbols: U+2600–U+26FF
-    // - Dingbats: U+2700–U+27BF
-    // - Misc Symbols and Pictographs: U+1F300–U+1F5FF
-    // - Transport and Map: U+1F680–U+1F6FF
-    let filtered = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/gu, '');
-    
-    // 移除其他可能导致问题的特殊字符
-    // 保留：中文、英文、数字、常见标点符号
-    // 移除：控制字符、特殊符号等
-    // eslint-disable-next-line no-control-regex
-    filtered = filtered.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // 控制字符
-    
-    // 移除一些可能导致发布失败的特殊符号（根据实际情况调整）
-    filtered = filtered.replace(/[\u{1F3AC}\u{1F3A5}\u{1F4FA}\u{1F4F9}\u{1F3A6}\u{1F3AD}\u{1F3AA}\u{1F3A8}\u{1F3AF}\u{1F3B2}\u{1F3B0}\u{1F3B3}]\uFE0F?/gu, '');
-    
-    // 移除多余的空格
-    filtered = filtered.replace(/\s+/g, ' ').trim();
-    
-    return filtered;
+    return filterWeChatUnsupportedCharsHelper(text);
   }
 
   // 转义 HTML 特殊字符
   private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return escapeHtmlHelper(text);
   }
 
   // 调整颜色亮度（用于创建渐变效果）
@@ -170,45 +129,8 @@ export class SyncService {
   }
 
   // 将 rich_text 数组转换为 HTML
-  private convertRichTextToHtml(richText: Array<{ plain_text: string; href?: string | null; annotations?: any }>, _theme?: ThemeStyles): string {
-    if (richText.length === 0) {
-      return '';
-    }
-    
-    const parts: string[] = [];
-    
-    for (const text of richText) {
-      let content = this.escapeHtml(text.plain_text);
-      
-      // 如果有链接，用独立的块级div包裹（两行显示）
-      if (text.href) {
-        // 应用格式到链接文字
-        if (text.annotations?.bold) {
-          content = `<strong>${content}</strong>`;
-        }
-        if (text.annotations?.italic) {
-          content = `<em>${content}</em>`;
-        }
-        // 独立的链接块：第一行蓝色文字，第二行灰色URL
-        parts.push(`<span style="display: inline-block; margin: 0.3em 0; vertical-align: top;"><a href="${text.href}" style="color: #576b95; text-decoration: none; border-bottom: 1px solid #576b95; font-weight: 500; display: block;">${content}</a><span style="color: #999; font-size: 12px; display: block; margin-top: 0.2em; line-height: 1.4;">${text.href}</span></span>`);
-        continue;
-      }
-      
-      // 非链接文本的格式处理
-      if (text.annotations?.bold) {
-        content = `<strong>${content}</strong>`;
-      }
-      if (text.annotations?.italic) {
-        content = `<em>${content}</em>`;
-      }
-      if (text.annotations?.code) {
-        content = `<code style="background-color: #f5f5f5; padding: 3px 6px; border-radius: 3px; font-family: 'SF Mono', Consolas, Monaco, monospace; font-size: 0.9em; color: #d73a49;">${content}</code>`;
-      }
-      
-      parts.push(content);
-    }
-    
-    return parts.join('');
+  private convertRichTextToHtml(richText: SyncRichText[], _theme?: ThemeStyles): string {
+    return convertRichTextToHtmlHelper(richText);
   }
 
   // 获取封面图片 URL（优先使用页面 cover，然后 Cover 属性，最后 MainImage）

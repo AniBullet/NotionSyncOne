@@ -107,7 +107,7 @@ PR body:
 - npm run build:dir
 ```
 
-- [ ] **Step 4: Merge PR after checks/review**
+- [x] **Step 4: Merge PR after checks/review**
 
 Expected: `main` includes commit `6ad93b8` or its squash equivalent.
 

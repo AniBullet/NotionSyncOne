@@ -7,7 +7,7 @@ import { LogService } from './LogService';
 import { NotionPage, NotionBlock } from '../../shared/types/notion';
 import { WeChatArticle } from '../../shared/types/wechat';
 import { WordPressArticle } from '../../shared/types/wordpress';
-import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { themes, ThemeStyles } from '../../shared/types/theme';
 import {
@@ -28,6 +28,7 @@ import {
 import { SyncStateStore } from './sync/stateStore';
 import { syncArticleToWeChat } from './sync/wechatSync';
 import { syncArticleToWordPressFlow } from './sync/wordpressSync';
+import { syncVideoToBilibiliFlow } from './sync/bilibiliSync';
 import { app } from 'electron';
 import * as path from 'path';
 
@@ -796,186 +797,21 @@ export class SyncService {
     publishMode: 'draft' | 'publish' = 'draft',
     autoCompress: boolean = true
   ): Promise<SyncState> {
-    const biliSyncKey = `bili_${articleId}`;
-    
-    LogService.log('========== syncVideoToBilibili 被调用 ==========', 'SyncService');
-    LogService.log(`  - articleId: ${articleId}`, 'SyncService');
-    LogService.log(`  - publishMode: ${publishMode}`, 'SyncService');
-    LogService.log(`  - metadata.title: ${metadata?.title}`, 'SyncService');
-    LogService.log(`  - metadata.tid: ${metadata?.tid}`, 'SyncService');
-    LogService.log(`  - metadata.tags: [${(metadata?.tags || []).join(', ')}]`, 'SyncService');
-    
-    try {
-      if (!this.bilibiliService) {
-        throw new Error('Bilibili 服务未初始化');
-      }
-
-      // 创建 AbortController 用于取消
-      const abortController = new AbortController();
-      this.activeSyncControllers.set(biliSyncKey, abortController);
-
-      LogService.log('========== SyncService: 开始同步视频到B站 ==========', 'SyncService');
-      this.updateSyncState(biliSyncKey, SyncStatus.SYNCING);
-
-      // 1. 获取文章页面
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      // 2. 从 Notion 获取更多文章属性（用于简介模板）
-      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
-      const engine = page.properties.Engine?.select?.name || '';
-      const expectationsRate = page.properties.ExpectationsRate?.number;
-      
-      // 提取标签
-      const featureTag = page.properties.FeatureTag;
-      let tags: string[] = [];
-      if (featureTag) {
-        if (featureTag.type === 'select' && featureTag.select) {
-          tags = [featureTag.select.name];
-        } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
-          tags = featureTag.multi_select.map((tag: any) => tag.name);
-        }
-      }
-      
-      // 获取添加时间
-      const addedTimeProperty = page.properties.AddedTime;
-      let addedTime = '';
-      if (addedTimeProperty) {
-        if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
-          addedTime = addedTimeProperty.date.start;
-        } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
-          addedTime = addedTimeProperty.created_time;
-        }
-      }
-      if (!addedTime && page.addedTime) {
-        addedTime = page.addedTime;
-      }
-      
-      LogService.log(`文章属性 - 来源: ${from}, 作者: ${author}, 链接: ${linkStart}`, 'SyncService');
-      
-      // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
-      if (linkStart && !metadata.source) {
-        metadata.source = linkStart;
-      }
-      
-      // 自动获取封面图片（如果 metadata 中没有指定 cover）
-      if (!metadata.cover) {
-        const coverUrl = this.getCoverImageUrl(page);
-        if (coverUrl) {
-          metadata.cover = coverUrl;
-          LogService.log(`已自动获取封面图片: ${coverUrl.substring(0, 50)}...`, 'SyncService');
-        } else {
-          LogService.log('未找到封面图片', 'SyncService');
-        }
-      } else {
-        LogService.log(`使用指定的封面图片: ${metadata.cover.substring(0, 50)}...`, 'SyncService');
-      }
-      
-      // 将 Notion 属性添加到 metadata 中（用于简介模板）
-      if (!metadata.notionProps) {
-        metadata.notionProps = {};
-      }
-      metadata.notionProps = {
-        from,
-        author,
-        engine,
-        expectationsRate: expectationsRate ?? undefined,
-        tags,
-        addedTime,
-        linkStart
-      };
-
-      // 应用标题模板（如果配置了）
-      const biliConfig = this.configService.getBilibiliConfig();
-      if (biliConfig.titleTemplate && biliConfig.titleTemplate.trim()) {
-        const originalTitle = metadata.title;
-        metadata.title = biliConfig.titleTemplate.replace(/\{title\}/g, metadata.title);
-        LogService.log(`应用标题模板: ${originalTitle} -> ${metadata.title}`, 'SyncService');
-      }
-
-      // 3. 提取视频
-      LogService.log('正在提取视频...', 'SyncService');
-      const videoInfos = await this.notionService.extractVideos(articleId);
-      
-      if (videoInfos.length === 0) {
-        throw new Error('文章中没有找到视频');
-      }
-
-      LogService.log(`找到 ${videoInfos.length} 个视频`, 'SyncService');
-
-      // 4. 下载视频
-      const videos: BilibiliVideo[] = [];
-      for (let i = 0; i < videoInfos.length; i++) {
-        const videoInfo = videoInfos[i];
-        LogService.log(`正在下载视频 ${i + 1}/${videoInfos.length}...`, 'SyncService');
-        
-        const video: BilibiliVideo = {
-          url: videoInfo.url,
-          caption: videoInfo.caption,
-          type: videoInfo.type
-        };
-
-        const localPath = await this.bilibiliService.downloadVideo(
-          video,
-          abortController.signal,
-          articleId  // 传递 articleId 用于进度追踪
-        );
-        
-        video.localPath = localPath;
-        videos.push(video);
-      }
-
-      // 5. 准备上传选项
-      const uploadOptions: BilibiliUploadOptions = {
-        publishMode,
-        metadata,
-        videos,
-        autoCompress,
-        compressionQuality: 23,
-        articleId  // 添加 articleId 用于进度追踪
-      };
-
-      // 5. 上传到B站
-      LogService.log(`开始上传到B站，模式: ${publishMode}`, 'SyncService');
-      const result = await this.bilibiliService.uploadVideo(
-        uploadOptions,
-        abortController.signal
-      );
-
-      LogService.success('========== B站同步成功 ==========', 'SyncService');
-      if (result.link) {
-        LogService.log(`稿件链接: ${result.link}`, 'SyncService');
-      }
-      if (result.bvid) {
-        LogService.log(`稿件BV号: ${result.bvid}`, 'SyncService');
-      }
-
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-
-      // 保存B站上传结果到同步状态（包含标题用于后续验证）
-      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS, undefined, {
-        bilibili: {
-          bvid: result.bvid,
-          link: result.link,
-          aid: result.aid,
-          title: metadata.title  // 保存视频标题
-        }
-      });
-      return successState;
-    } catch (error) {
-      LogService.error('========== B站同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-      
-      const failedState = this.updateSyncState(biliSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncVideoToBilibiliFlow(
+      {
+        notionService: this.notionService,
+        bilibiliService: this.bilibiliService,
+        configService: this.configService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        setActiveController: (syncKey, controller) => this.activeSyncControllers.set(syncKey, controller),
+        deleteActiveController: (syncKey) => this.activeSyncControllers.delete(syncKey),
+        updateSyncState: (id, status, error, results) => this.updateSyncState(id, status, error, results),
+      },
+      articleId,
+      metadata,
+      publishMode,
+      autoCompress
+    );
   }
 
   /**

@@ -207,3 +207,37 @@ test('SyncService renders code blocks with line numbers and language label', () 
   assert.match(html, />1<\/li>/);
   assert.match(html, />2<\/li>/);
 });
+
+test('SyncService renders FeatureTag metadata for select and multi_select values', () => {
+  const service = createSyncService();
+
+  const selectHtml = service.createArticleInfo({
+    id: 'page-select',
+    url: 'https://notion.so/page-select',
+    title: 'Article',
+    lastEditedTime: '2026-05-04T00:00:00.000Z',
+    properties: {
+      FeatureTag: {
+        type: 'select',
+        select: { name: '<AI>' },
+      },
+    },
+  });
+
+  const multiSelectHtml = service.createArticleInfo({
+    id: 'page-multi-select',
+    url: 'https://notion.so/page-multi-select',
+    title: 'Article',
+    lastEditedTime: '2026-05-04T00:00:00.000Z',
+    properties: {
+      FeatureTag: {
+        type: 'multi_select',
+        multi_select: [{ name: 'Notion' }, { name: 'Sync' }],
+      },
+    },
+  });
+
+  assert.match(selectHtml, /&lt;AI&gt;/);
+  assert.doesNotMatch(selectHtml, /<AI>/);
+  assert.match(multiSelectHtml, /Notion, Sync/);
+});

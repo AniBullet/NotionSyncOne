@@ -85,13 +85,17 @@ test('all-platform sync requires wechat and wordpress only', () => {
   });
 });
 
-test('sync target display metadata supports compact icon buttons', () => {
+test('sync target display metadata uses readable short brand labels', () => {
   assert.deepEqual(getSyncTargetDisplay('wechat'), {
-    compactLabel: '微',
+    compactLabel: '微信',
     ariaLabel: '同步到微信'
   });
+  assert.deepEqual(getSyncTargetDisplay('bilibili'), {
+    compactLabel: 'B站',
+    ariaLabel: '同步到 B站'
+  });
   assert.deepEqual(getSyncTargetDisplay('both'), {
-    compactLabel: '全',
+    compactLabel: '全部',
     ariaLabel: '同步到微信和 WordPress'
   });
 });

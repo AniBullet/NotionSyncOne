@@ -365,20 +365,24 @@ const MainLayout: React.FC = () => {
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: '28px',
+          width: '18px',
           height: '28px',
           padding: 0,
-          borderRadius: '8px',
-          border: `1px solid ${available ? `${platform.accentColor}55` : 'var(--border-light)'}`,
-          backgroundColor: available ? `${platform.accentColor}18` : 'var(--bg-tertiary)',
+          borderRadius: '999px',
+          border: 'none',
+          backgroundColor: 'transparent',
           color: available ? platform.accentColor : 'var(--text-secondary)',
-          fontSize: '11px',
-          cursor: available ? 'default' : 'pointer',
-          fontWeight: 700
+          cursor: available ? 'default' : 'pointer'
         }}
         title={available ? `${platform.label}: ${platform.summary}` : `${platform.label}: ${platform.summary}，点击打开设置`}
       >
-        {platform.shortLabel}
+        <span style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: available ? platform.accentColor : 'var(--warning)',
+          boxShadow: available ? `0 0 0 3px ${platform.accentColor}18` : '0 0 0 3px rgba(252, 211, 77, 0.16)'
+        }} />
       </button>
     );
   };
@@ -399,14 +403,14 @@ const MainLayout: React.FC = () => {
           onClick={() => setOpenSyncMenu(prev => prev === target ? null : target)}
           aria-label={display.ariaLabel}
           style={{
-            width: '36px',
+            minWidth: target === 'wordpress' ? '44px' : '52px',
             height: '36px',
-            padding: 0,
+            padding: '0 10px',
             borderRadius: '8px',
             border: disabled ? '1px solid var(--border-light)' : `1px solid ${accent}66`,
             backgroundColor: disabled ? 'var(--bg-tertiary)' : `${accent}18`,
             color: disabled ? 'var(--text-tertiary)' : accent,
-            fontSize: target === 'wordpress' ? '11px' : '13px',
+            fontSize: '12px',
             cursor: disabled ? 'not-allowed' : 'pointer',
             fontWeight: 800,
             opacity: disabled ? 0.62 : 1

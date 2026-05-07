@@ -123,7 +123,7 @@ Expected: `main` includes commit `6ad93b8` or its squash equivalent.
 - No code changes expected.
 - Optional note file if findings need tracking: `docs/superpowers/plans/2026-05-05-smoke-test-notes.md`
 
-- [ ] **Step 1: Start the app**
+- [x] **Step 1: Start the app**
 
 Run:
 
@@ -132,6 +132,8 @@ npm.cmd run dev:start
 ```
 
 Expected: Electron app opens without startup errors.
+
+Verified on 2026-05-08 with `npm.cmd run dev:start`: Vite served `http://127.0.0.1:5173/`, Electron process started, services initialized, and Notion API fetched 310 articles. Remaining smoke steps still need interactive window checks.
 
 - [ ] **Step 2: Test settings save**
 

@@ -15,7 +15,18 @@ const CoverImage: React.FC<{ coverUrl?: string; title: string }> = ({ coverUrl, 
         alignItems: 'center',
         justifyContent: 'center'
       }}>
-        <span style={{ fontSize: '40px', opacity: 0.1 }}>📄</span>
+        <span
+          aria-hidden="true"
+          style={{
+            width: '34px',
+            height: '44px',
+            borderRadius: '6px',
+            border: '2px solid var(--border-medium)',
+            backgroundColor: 'var(--bg-primary)',
+            boxShadow: 'inset 0 -10px 0 var(--bg-secondary)',
+            opacity: 0.55
+          }}
+        />
       </div>
     );
   }
@@ -53,7 +64,7 @@ const SyncBadges: React.FC<{
   wpState?: SyncState;
   biliState?: SyncState;
 }> = ({ wechatState, wpState, biliState }) => {
-  const getBadge = (state: SyncState | undefined, label: string, title: string) => {
+  const getBadge = (state: SyncState | undefined, title: string) => {
     if (!state) return null;
 
     let color = 'var(--text-tertiary)';
@@ -80,29 +91,32 @@ const SyncBadges: React.FC<{
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: '22px',
-          height: '22px',
+          width: '18px',
+          height: '18px',
           borderRadius: '50%',
           backgroundColor,
-          fontSize: label === 'WP' ? '9px' : '10px',
           color,
-          fontWeight: '700',
           lineHeight: 1,
           flexShrink: 0
         }}
         aria-label={`${title}: ${statusText}`}
         title={state.error ? `${title}: ${statusText} - ${state.error}` : `${title}: ${statusText}`}
       >
-        <span>{label}</span>
+        <span aria-hidden="true" style={{
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          backgroundColor: color
+        }} />
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      {getBadge(wechatState, '\u5fae', '\u5fae\u4fe1')}
-      {getBadge(wpState, 'WP', 'WordPress')}
-      {getBadge(biliState, 'B', 'B\u7ad9')}
+      {getBadge(wechatState, '微信')}
+      {getBadge(wpState, 'WordPress')}
+      {getBadge(biliState, 'B站')}
     </div>
   );
 };
@@ -155,7 +169,7 @@ const ContextMenu: React.FC<{
         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
       >
-        🌐 外部浏览器打开
+        外部浏览器打开
       </button>
       <button
         style={itemStyle}
@@ -163,7 +177,7 @@ const ContextMenu: React.FC<{
         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
       >
-        📱 内部浏览器打开
+        内部浏览器打开
       </button>
     </div>
   );

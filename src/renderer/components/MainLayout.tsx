@@ -87,7 +87,7 @@ const MainLayout: React.FC = () => {
       }
       
       // 更新状态栏消息
-      const phaseText = progressData.phase === 'downloading' ? '📥 下载视频' : '📤 上传到B站';
+      const phaseText = progressData.phase === 'downloading' ? '下载视频' : '上传到 B站';
       setStatusMessage(`${phaseText}: ${progressData.progress.toFixed(1)}%`);
       
       // 更新文章卡片进度
@@ -270,7 +270,7 @@ const MainLayout: React.FC = () => {
         }
 
         if (target === 'bilibili') {
-          setStatusMessage(`📹 正在同步 [${i + 1}/${total}]: ${title}`);
+          setStatusMessage(`正在同步 B站 [${i + 1}/${total}]: ${title}`);
           setBiliSyncStates(prev => ({ ...prev, [articleId]: { articleId: `bili_${articleId}`, status: SyncStatus.SYNCING } }));
           
           // 调用B站同步服务
@@ -289,10 +289,10 @@ const MainLayout: React.FC = () => {
             
             if (state.status === SyncStatus.SUCCESS) {
               successCount++;
-              setStatusMessage(`✅ B站同步成功 [${i + 1}/${total}]: ${title}`);
+              setStatusMessage(`B站同步成功 [${i + 1}/${total}]: ${title}`);
             } else {
               failCount++;
-              setStatusMessage(`⚠️ B站同步失败 [${i + 1}/${total}]: ${state.error || '未知错误'}`);
+              setStatusMessage(`B站同步失败 [${i + 1}/${total}]: ${state.error || '未知错误'}`);
             }
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : 'B站同步失败';
@@ -306,7 +306,7 @@ const MainLayout: React.FC = () => {
               } 
             }));
             failCount++;
-            setStatusMessage(`❌ B站同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+            setStatusMessage(`B站同步失败 [${i + 1}/${total}]: ${errorMsg}`);
           }
         }
         
@@ -323,10 +323,10 @@ const MainLayout: React.FC = () => {
     }
 
     const result = failCount === 0 
-      ? `✅ 全部成功！已同步 ${successCount} 篇文章` 
-      : `⚠️ 部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇`;
+      ? `全部成功，已同步 ${successCount} 篇文章`
+      : `部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇`;
     setStatusMessage(result);
-    await IpcService.showNotification('同步完成', result.replace(/[✅⚠]/gu, '').replace(/\uFE0F/g, '').trim());
+    await IpcService.showNotification('同步完成', result);
     
     // 清空选择
     setSelectedArticles(new Set());
@@ -511,7 +511,7 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(7, 193, 96, 0.15)',
                 color: '#07C160'
               }}>
-                微 {wechatSynced}
+                微信 {wechatSynced}
               </span>
             )}
             {wpSynced > 0 && (
@@ -533,7 +533,7 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(251, 114, 153, 0.15)',
                 color: '#FB7299'
               }}>
-                B {biliSynced}
+                B站 {biliSynced}
               </span>
             )}
           </div>

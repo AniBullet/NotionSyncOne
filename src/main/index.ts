@@ -10,6 +10,7 @@ import { setupIpcHandlers } from './ipc/handlers';
 
 // 判断是否为开发环境
 const isDev = process.env.NODE_ENV === 'development';
+const shouldOpenDevTools = process.env.OPEN_DEVTOOLS === '1';
 
 // 获取图标路径（兼容开发和生产环境）
 function getIconPath(): string {
@@ -150,8 +151,8 @@ async function createWindow() {
     // 隐藏菜单栏
     Menu.setApplicationMenu(null);
 
-    // 开发者工具（开发模式下自动打开）
-    if (isDev) {
+    // 开发者工具：需要时用 OPEN_DEVTOOLS=1 显式开启，避免默认挤占工作台。
+    if (isDev && shouldOpenDevTools) {
       mainWindow.webContents.openDevTools();
     }
   } catch (error) {

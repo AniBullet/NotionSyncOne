@@ -11,3 +11,8 @@ test('main window defaults leave room for dense toolbar controls', () => {
   assert.match(source, /minWidth:\s*1100,/);
   assert.match(source, /minHeight:\s*700,/);
 });
+
+test('main window opens DevTools only when explicitly requested', () => {
+  assert.match(source, /const shouldOpenDevTools\s*=\s*process\.env\.OPEN_DEVTOOLS\s*===\s*'1'/);
+  assert.match(source, /if\s*\(isDev\s*&&\s*shouldOpenDevTools\)\s*{\s*mainWindow\.webContents\.openDevTools\(\);/s);
+});

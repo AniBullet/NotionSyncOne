@@ -144,13 +144,15 @@ Actions:
 
 Expected: save succeeds if Notion required fields are present.
 
-- [ ] **Step 3: Test Notion list load**
+- [x] **Step 3: Test Notion list load**
 
 Actions:
 - Open the Notion article list.
 - Trigger refresh/load if needed.
 
 Expected: list loads or shows a clear config/network error.
+
+Verified on 2026-05-08: the workbench rendered the Notion list with 310 articles, cached cards, cover images, footer status, and no default DevTools pane after the `OPEN_DEVTOOLS=1` gate was added.
 
 - [ ] **Step 4: Test WeChat preview**
 
@@ -160,13 +162,15 @@ Actions:
 
 Expected: preview opens, rich text/list/image/code content renders without obvious escaping regressions.
 
-- [ ] **Step 5: Test WordPress and Bilibili button state**
+- [x] **Step 5: Test WordPress and Bilibili button state**
 
 Actions:
 - Inspect WordPress controls.
 - Inspect Bilibili controls.
 
 Expected: disabled/enabled state matches saved config, with no crash.
+
+Verified on 2026-05-08: with no selected article, sync buttons were disabled; after selecting one article, WeChat, WordPress, Bilibili, and All buttons became available. No sync action was triggered.
 
 - [ ] **Step 6: Record issues**
 

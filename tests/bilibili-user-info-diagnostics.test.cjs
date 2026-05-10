@@ -4,7 +4,8 @@ const test = require('node:test');
 require('ts-node/register/transpile-only');
 
 const {
-  describeBilibiliApiFailure
+  describeBilibiliApiFailure,
+  getBilibiliFallbackUserInfo
 } = require('../src/main/services/BilibiliService.ts');
 
 test('bilibili user info diagnostics include http status and api message', () => {
@@ -31,4 +32,12 @@ test('bilibili user info diagnostics include network error message', () => {
   });
 
   assert.equal(detail, 'network ECONNABORTED, timeout of 8000ms exceeded');
+});
+
+test('bilibili fallback user info treats cookie uid as logged in', () => {
+  assert.deepEqual(getBilibiliFallbackUserInfo('2031113'), {
+    name: '已登录，昵称暂不可用',
+    mid: '2031113',
+    verifiedByCookie: true
+  });
 });

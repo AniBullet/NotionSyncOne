@@ -23,6 +23,12 @@ type GitHubReleaseAsset = {
   browser_download_url?: string;
 };
 
+export type BilibiliUserInfo = {
+  name: string;
+  mid: string;
+  verifiedByCookie?: boolean;
+};
+
 export function describeBilibiliApiFailure(error: unknown): string {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error ? error.message : String(error);
@@ -50,6 +56,14 @@ export function describeBilibiliApiFailure(error: unknown): string {
   }
 
   return parts.join(', ');
+}
+
+export function getBilibiliFallbackUserInfo(mid: string): BilibiliUserInfo {
+  return {
+    name: '已登录，昵称暂不可用',
+    mid,
+    verifiedByCookie: true
+  };
 }
 
 export class BilibiliService {
@@ -240,7 +254,7 @@ export class BilibiliService {
   /**
    * 获取B站用户信息（安全：不记录敏感Cookie内容）
    */
-  async getUserInfo(): Promise<{ name: string; mid: string } | null> {
+  async getUserInfo(): Promise<BilibiliUserInfo | null> {
     try {
       const config = this.configService.getBilibiliConfig();
       const cookieFile = config.cookieFile || path.join(this.tempDir, 'cookies.json');
@@ -338,11 +352,8 @@ export class BilibiliService {
       }
 
       // 所有 API 都失败，返回基本信息（至少显示 UID）
-      LogService.warn('所有 API 均失败，显示默认信息；建议重新登录或检查网络/代理', 'BilibiliService');
-      return {
-        name: `登录状态待确认`,
-        mid: mid
-      };
+      LogService.warn('用户昵称 API 均失败；Cookie 中已读取到 UID，将按已登录状态继续', 'BilibiliService');
+      return getBilibiliFallbackUserInfo(mid);
     } catch (error) {
       LogService.error('获取用户信息失败', 'BilibiliService', error);
       return null;

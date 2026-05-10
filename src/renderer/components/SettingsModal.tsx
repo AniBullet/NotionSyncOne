@@ -22,7 +22,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ checking: boolean; latest?: string; hasUpdate?: boolean }>({ checking: false });
-  const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string } | null>(null);
+  const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string; verifiedByCookie?: boolean } | null>(null);
   const sectionStatus = getSettingsSections(config);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const loadBilibiliUser = async () => {
     try {
       const userInfo = await window.electron.ipcRenderer.invoke('get-bilibili-user');
-      setBilibiliUser(userInfo as { name: string; mid: string } | null);
+      setBilibiliUser(userInfo as { name: string; mid: string; verifiedByCookie?: boolean } | null);
     } catch (err) {
       console.error('加载B站用户信息失败:', err);
       setBilibiliUser(null);
@@ -569,9 +569,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                             <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
                               {bilibiliUser.name} <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({bilibiliUser.mid})</span>
                             </div>
-                            {bilibiliUser.name === '登录状态待确认' && (
-                              <div style={{ marginTop: '3px', fontSize: '11px', color: 'var(--warning)' }}>
-                                用户信息接口暂不可用，上传前建议重新登录或检查网络代理
+                            {bilibiliUser.verifiedByCookie && (
+                              <div style={{ marginTop: '3px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                已从登录 Cookie 读取到 UID，上传前会继续使用当前登录状态
                               </div>
                             )}
                           </div>

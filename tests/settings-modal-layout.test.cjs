@@ -25,3 +25,9 @@ test('settings modal tabs remain usable and screen-reader friendly', () => {
   assert.match(source, /type="button"/);
   assert.match(source, /borderRight:\s*'1px solid var\(--border-light\)'/);
 });
+
+test('settings modal does not ask for relogin when bilibili uid is available', () => {
+  assert.match(source, /verifiedByCookie/);
+  assert.match(source, /上传前会继续使用当前登录状态/);
+  assert.doesNotMatch(source, /上传前建议重新登录或检查网络代理/);
+});

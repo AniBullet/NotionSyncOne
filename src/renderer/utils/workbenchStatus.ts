@@ -1,5 +1,6 @@
 import { Config } from '../../shared/types/config';
 import { SyncTarget } from '../components/SyncButton';
+import { PLATFORM_COLORS } from './platformColors';
 
 export type WorkbenchPlatformKey = 'wechat' | 'wordpress' | 'bilibili' | 'both';
 
@@ -52,7 +53,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
       missingFields: wechatMissing,
       summary: summaryFor(wechatMissing),
       settingsTab: 'wechat',
-      accentColor: '#07C160'
+      accentColor: PLATFORM_COLORS.wechat
     },
     wordpress: {
       key: 'wordpress',
@@ -62,7 +63,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
       missingFields: wordpressMissing,
       summary: summaryFor(wordpressMissing),
       settingsTab: 'wordpress',
-      accentColor: '#21759B'
+      accentColor: PLATFORM_COLORS.wordpress
     },
     bilibili: {
       key: 'bilibili',
@@ -72,7 +73,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
       missingFields: bilibiliMissing,
       summary: bilibiliMissing.length > 0 ? bilibiliMissing.join('、') : '可同步',
       settingsTab: 'bilibili',
-      accentColor: '#FB7299'
+      accentColor: PLATFORM_COLORS.bilibili
     },
     both: {
       key: 'both',
@@ -82,7 +83,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
       missingFields: bothMissing,
       summary: summaryFor(bothMissing),
       settingsTab: 'wechat',
-      accentColor: '#10B981'
+      accentColor: PLATFORM_COLORS.wechat
     }
   };
 };

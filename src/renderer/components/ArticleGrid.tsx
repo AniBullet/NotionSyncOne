@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
+import {
+  getSyncBadgePresentation,
+  PLATFORM_LABELS
+} from '../utils/syncPresentation';
+import type { SyncPlatform } from '../utils/syncPresentation';
 
 // 封面图
 const CoverImage: React.FC<{ coverUrl?: string; title: string }> = ({ coverUrl, title }) => {
@@ -56,6 +61,7 @@ interface ArticleGridProps {
   selectedArticles: Set<string>;
   onToggleArticle: (id: string) => void;
   onPreview?: (articleId: string) => void;
+  onShowSyncFailure?: (articleId: string, platform: SyncPlatform) => void;
 }
 
 // Compact sync status dots for dense article cards.
@@ -63,30 +69,34 @@ const SyncBadges: React.FC<{
   wechatState?: SyncState;
   wpState?: SyncState;
   biliState?: SyncState;
-}> = ({ wechatState, wpState, biliState }) => {
-  const getBadge = (state: SyncState | undefined, title: string) => {
+  onShowFailure?: (platform: SyncPlatform) => void;
+}> = ({ wechatState, wpState, biliState, onShowFailure }) => {
+  const getBadge = (state: SyncState | undefined, platform: SyncPlatform) => {
     if (!state) return null;
 
-    let color = 'var(--text-tertiary)';
-    let backgroundColor = 'var(--bg-tertiary)';
-    let statusText = '\u7b49\u5f85';
-    if (state.status === SyncStatus.SUCCESS) {
-      color = '#10B981';
-      backgroundColor = 'rgba(16, 185, 129, 0.12)';
-      statusText = '\u5df2\u540c\u6b65';
-    } else if (state.status === SyncStatus.FAILED) {
-      color = '#EF4444';
-      backgroundColor = 'rgba(239, 68, 68, 0.12)';
-      statusText = '\u5931\u8d25';
-    } else if (state.status === SyncStatus.SYNCING) {
-      color = '#F59E0B';
-      backgroundColor = 'rgba(245, 158, 11, 0.14)';
-      statusText = '\u540c\u6b65\u4e2d';
-    }
+    const badge = getSyncBadgePresentation(platform, state);
+    if (!badge) return null;
+
+    const title = PLATFORM_LABELS[platform];
+    const failed = state.status === SyncStatus.FAILED;
+    const tooltip = badge.reason ? `${title}: ${badge.statusText} - ${badge.reason}` : `${title}: ${badge.statusText}`;
 
     return (
       <div
-        key={title}
+        key={platform}
+        role={failed ? 'button' : undefined}
+        tabIndex={failed ? 0 : undefined}
+        onClick={event => {
+          if (!failed) return;
+          event.stopPropagation();
+          onShowFailure?.(platform);
+        }}
+        onKeyDown={event => {
+          if (!failed || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onShowFailure?.(platform);
+        }}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -94,29 +104,47 @@ const SyncBadges: React.FC<{
           width: '18px',
           height: '18px',
           borderRadius: '50%',
-          backgroundColor,
-          color,
+          border: `1px solid ${badge.borderColor}`,
+          backgroundColor: badge.backgroundColor,
+          color: badge.color,
           lineHeight: 1,
-          flexShrink: 0
+          flexShrink: 0,
+          cursor: failed ? 'pointer' : 'default',
+          position: 'relative'
         }}
-        aria-label={`${title}: ${statusText}`}
-        title={state.error ? `${title}: ${statusText} - ${state.error}` : `${title}: ${statusText}`}
+        aria-label={tooltip}
+        title={tooltip}
       >
         <span aria-hidden="true" style={{
           width: '7px',
           height: '7px',
           borderRadius: '50%',
-          backgroundColor: color
+          backgroundColor: badge.color
         }} />
+        {failed && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              right: '-1px',
+              bottom: '-1px',
+              width: '5px',
+              height: '5px',
+              borderRadius: '50%',
+              backgroundColor: '#EF4444',
+              border: '1px solid var(--bg-primary)'
+            }}
+          />
+        )}
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-      {getBadge(wechatState, '微信')}
-      {getBadge(wpState, 'WordPress')}
-      {getBadge(biliState, 'B站')}
+      {getBadge(wechatState, 'wechat')}
+      {getBadge(wpState, 'wordpress')}
+      {getBadge(biliState, 'bilibili')}
     </div>
   );
 };
@@ -195,7 +223,8 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
   hasBilibiliConfig: _hasBilibiliConfig,
   selectedArticles,
   onToggleArticle,
-  onPreview: _onPreview
+  onPreview: _onPreview,
+  onShowSyncFailure
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; url?: string } | null>(null);
 
@@ -296,6 +325,7 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
                     wechatState={syncStates[article.id]}
                     wpState={wpSyncStates[article.id]}
                     biliState={biliSyncStates[article.id]}
+                    onShowFailure={platform => onShowSyncFailure?.(article.id, platform)}
                   />
                 </div>
               </div>

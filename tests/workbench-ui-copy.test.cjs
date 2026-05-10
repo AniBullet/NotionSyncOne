@@ -19,7 +19,8 @@ test('workbench platform counters use readable labels', () => {
 });
 
 test('article sync badges render status dots instead of text abbreviations', () => {
-  assert.match(articleGrid, /aria-label=\{\`\$\{title\}: \$\{statusText\}\`\}/);
+  assert.match(articleGrid, /aria-label=\{tooltip\}/);
+  assert.match(articleGrid, /title=\{tooltip\}/);
   assert.match(articleGrid, /<span aria-hidden="true" style=\{\{/);
   assert.doesNotMatch(articleGrid, /getBadge\(wechatState,\s*'微'/);
   assert.doesNotMatch(articleGrid, /getBadge\(biliState,\s*'B'/);

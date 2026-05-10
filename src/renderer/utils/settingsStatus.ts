@@ -1,4 +1,5 @@
 import { Config } from '../../shared/types/config';
+import { NOTION_SOURCE_COLOR, PLATFORM_COLORS } from './platformColors';
 
 export type SettingsSectionKey = 'notion' | 'wechat' | 'wordpress' | 'bilibili';
 
@@ -47,7 +48,7 @@ export const getSettingsSections = (config: Config): SettingsSections => {
       optional: false,
       missingFields: notionMissing,
       summary: summarize(notionMissing, '已配置'),
-      accentColor: '#10B981'
+      accentColor: NOTION_SOURCE_COLOR
     },
     wechat: {
       key: 'wechat',
@@ -56,7 +57,7 @@ export const getSettingsSections = (config: Config): SettingsSections => {
       optional: false,
       missingFields: wechatMissing,
       summary: summarize(wechatMissing, '可同步'),
-      accentColor: '#07C160'
+      accentColor: PLATFORM_COLORS.wechat
     },
     wordpress: {
       key: 'wordpress',
@@ -65,7 +66,7 @@ export const getSettingsSections = (config: Config): SettingsSections => {
       optional: true,
       missingFields: wordpressMissing,
       summary: summarize(wordpressMissing, '可同步'),
-      accentColor: '#21759B'
+      accentColor: PLATFORM_COLORS.wordpress
     },
     bilibili: {
       key: 'bilibili',
@@ -74,7 +75,7 @@ export const getSettingsSections = (config: Config): SettingsSections => {
       optional: true,
       missingFields: bilibiliMissing,
       summary: bilibiliMissing.length > 0 ? '未启用' : '可同步',
-      accentColor: '#FB7299'
+      accentColor: PLATFORM_COLORS.bilibili
     }
   };
 };

@@ -16,6 +16,11 @@ import {
   PlatformReadiness,
   WorkbenchReadiness
 } from '../utils/workbenchStatus';
+import {
+  collectSyncFailures,
+  PLATFORM_COLORS
+} from '../utils/syncPresentation';
+import type { SyncFailureDetail, SyncPlatform } from '../utils/syncPresentation';
 
 import iconUrl from '/icon.png';
 
@@ -73,6 +78,7 @@ const MainLayout: React.FC = () => {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState<string>('就绪');
+  const [showSyncFailures, setShowSyncFailures] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -240,6 +246,28 @@ const MainLayout: React.FC = () => {
     });
   };
 
+  const markSyncFailed = (articleId: string, platform: SyncPlatform, error: string) => {
+    const nextState: SyncState = {
+      articleId: platform === 'wechat' ? articleId : `${platform === 'wordpress' ? 'wp' : 'bili'}_${articleId}`,
+      status: SyncStatus.FAILED,
+      error
+    };
+
+    if (platform === 'wechat') {
+      setSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    } else if (platform === 'wordpress') {
+      setWpSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    } else {
+      setBiliSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    }
+  };
+
+  const markTargetFailed = (articleId: string, target: SyncTarget, error: string) => {
+    if (target === 'wechat' || target === 'both') markSyncFailed(articleId, 'wechat', error);
+    if (target === 'wordpress' || target === 'both') markSyncFailed(articleId, 'wordpress', error);
+    if (target === 'bilibili') markSyncFailed(articleId, 'bilibili', error);
+  };
+
   const doMultiSync = async (articleIds: string[], target: SyncTarget, mode: 'publish' | 'draft') => {
     let successCount = 0;
     let failCount = 0;
@@ -307,6 +335,7 @@ const MainLayout: React.FC = () => {
             }));
             failCount++;
             setStatusMessage(`B站同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+            setShowSyncFailures(true);
           }
         }
         
@@ -318,14 +347,19 @@ const MainLayout: React.FC = () => {
         }
       } catch (error) {
         failCount++;
+        const errorMsg = error instanceof Error ? error.message : '同步失败';
+        markTargetFailed(articleId, target, errorMsg);
+        setStatusMessage(`同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+        setShowSyncFailures(true);
         console.error(`同步文章 ${articleId} 失败:`, error);
       }
     }
 
     const result = failCount === 0 
       ? `全部成功，已同步 ${successCount} 篇文章`
-      : `部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇`;
+      : `部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇，点“查看原因”看详情`;
     setStatusMessage(result);
+    setShowSyncFailures(failCount > 0);
     await IpcService.showNotification('同步完成', result);
     
     // 清空选择
@@ -348,6 +382,7 @@ const MainLayout: React.FC = () => {
   const wechatSynced = Object.values(syncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const wpSynced = Object.values(wpSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const biliSynced = Object.values(biliSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
+  const syncFailures = collectSyncFailures(articles, syncStates, wpSyncStates, biliSyncStates);
 
   const openSettingsTab = (tab: 'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about') => {
     setSettingsTab(tab);
@@ -455,12 +490,112 @@ const MainLayout: React.FC = () => {
     );
   };
 
+  const renderFailurePanel = (failures: SyncFailureDetail[]) => (
+    <section
+      role="dialog"
+      aria-label="同步失败原因"
+      style={{
+        position: 'absolute',
+        right: '20px',
+        bottom: '48px',
+        width: 'min(520px, calc(100% - 40px))',
+        maxHeight: '280px',
+        overflow: 'hidden',
+        backgroundColor: 'var(--bg-primary)',
+        border: '1px solid var(--border-light)',
+        borderRadius: '8px',
+        boxShadow: '0 16px 42px rgba(0,0,0,0.22)',
+        zIndex: 90
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 14px',
+        borderBottom: '1px solid var(--border-light)'
+      }}>
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>同步失败原因</div>
+          <div style={{ marginTop: '2px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+            {failures.length} 个任务需要处理
+          </div>
+        </div>
+        <button
+          onClick={() => setShowSyncFailures(false)}
+          aria-label="关闭失败原因"
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            border: '1px solid var(--border-light)',
+            backgroundColor: 'transparent',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: '16px'
+          }}
+          title="关闭"
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ maxHeight: '214px', overflow: 'auto', padding: '8px' }}>
+        {failures.map((failure, index) => (
+          <div
+            key={`${failure.articleId}-${failure.platform}-${index}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '92px 1fr',
+              gap: '10px',
+              padding: '10px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--bg-secondary)',
+              marginBottom: index === failures.length - 1 ? 0 : '8px'
+            }}
+          >
+            <span style={{
+              alignSelf: 'start',
+              justifySelf: 'start',
+              padding: '3px 8px',
+              borderRadius: '999px',
+              backgroundColor: `${PLATFORM_COLORS[failure.platform]}18`,
+              color: PLATFORM_COLORS[failure.platform],
+              fontSize: '12px',
+              fontWeight: 700
+            }}>
+              {failure.platformLabel}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div
+                title={failure.title}
+                style={{
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {failure.title}
+              </div>
+              <div style={{ marginTop: '4px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
+                {failure.error}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
   return (
     <div style={{ 
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      backgroundColor: 'var(--bg-secondary)'
+      backgroundColor: 'var(--bg-secondary)',
+      position: 'relative'
     }}>
       {/* 顶部导航栏 */}
       <header style={{ 
@@ -622,8 +757,11 @@ const MainLayout: React.FC = () => {
           hasBilibiliConfig={hasBilibiliConfig}
           selectedArticles={selectedArticles}
           onToggleArticle={handleToggleArticle}
+          onShowSyncFailure={() => setShowSyncFailures(true)}
         />
       </main>
+
+      {showSyncFailures && syncFailures.length > 0 && renderFailurePanel(syncFailures)}
 
       {/* 底部状态栏 */}
       <footer style={{
@@ -640,6 +778,26 @@ const MainLayout: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span>状态:</span>
           <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{statusMessage}</span>
+          {syncFailures.length > 0 && (
+            <button
+              onClick={() => setShowSyncFailures(prev => !prev)}
+              style={{
+                height: '28px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                color: 'var(--error)',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 700
+              }}
+              aria-label={`查看 ${syncFailures.length} 个同步失败原因`}
+              title="查看同步失败原因"
+            >
+              查看原因 {syncFailures.length}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {selectedArticles.size > 0 && (

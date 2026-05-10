@@ -23,6 +23,35 @@ type GitHubReleaseAsset = {
   browser_download_url?: string;
 };
 
+export function describeBilibiliApiFailure(error: unknown): string {
+  if (!axios.isAxiosError(error)) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  const status = error.response?.status;
+  const data = error.response?.data as { code?: number | string; message?: string; msg?: string } | undefined;
+  const parts: string[] = [];
+
+  if (status != null) {
+    parts.push(`HTTP ${status}`);
+  } else {
+    parts.push(`network ${error.code || 'error'}`);
+  }
+
+  if (data?.code != null) {
+    parts.push(`code ${data.code}`);
+  }
+
+  const apiMessage = data?.message || data?.msg;
+  if (apiMessage) {
+    parts.push(`message: ${apiMessage}`);
+  } else if (error.message) {
+    parts.push(error.message);
+  }
+
+  return parts.join(', ');
+}
+
 export class BilibiliService {
   private configService: ConfigService;
   private tempDir: string;
@@ -303,16 +332,15 @@ export class BilibiliService {
             }
           }
         } catch (apiError) {
-          const errorCode = axios.isAxiosError(apiError) ? (apiError.response?.data as { code?: number } | undefined)?.code : undefined;
-          LogService.warn(`API ${apiUrl} 失败 (code: ${errorCode})，尝试下一个`, 'BilibiliService');
+          LogService.warn(`API ${apiUrl} 失败（${describeBilibiliApiFailure(apiError)}），尝试下一个`, 'BilibiliService');
           continue;
         }
       }
 
       // 所有 API 都失败，返回基本信息（至少显示 UID）
-      LogService.warn('所有 API 均失败，显示默认信息', 'BilibiliService');
+      LogService.warn('所有 API 均失败，显示默认信息；建议重新登录或检查网络/代理', 'BilibiliService');
       return {
-        name: `B站用户`,  // 简洁的默认显示
+        name: `登录状态待确认`,
         mid: mid
       };
     } catch (error) {

@@ -263,12 +263,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '8px 10px',
+    padding: '9px 11px',
     fontSize: '13px',
     color: 'var(--text-primary)',
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-medium)',
-    borderRadius: '6px',
+    borderRadius: '8px',
     outline: 'none',
     marginTop: '4px'
   };
@@ -281,12 +281,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   };
 
   const testBtnStyle: React.CSSProperties = {
-    padding: '5px 10px',
-    borderRadius: '5px',
+    padding: '7px 12px',
+    borderRadius: '8px',
     border: '1px solid var(--border-medium)',
     backgroundColor: 'transparent',
     color: 'var(--text-secondary)',
-    fontSize: '11px',
+    fontSize: '12px',
     cursor: 'pointer',
     marginTop: '8px'
   };
@@ -309,35 +309,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     }} />
   );
 
-  const renderSectionSummary = (section: SettingsSectionStatus) => (
-    <button
-      key={section.key}
-      type="button"
-      onClick={() => setActiveTab(section.key)}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: '5px',
-        minWidth: 0,
-        padding: '10px 12px',
-        borderRadius: '8px',
-        border: activeTab === section.key ? `1px solid ${section.accentColor}66` : '1px solid var(--border-light)',
-        backgroundColor: activeTab === section.key ? `${section.accentColor}14` : 'var(--bg-secondary)',
-        cursor: 'pointer'
-      }}
-    >
-      <span style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-        {renderStatusDot(section)}
-        {section.label}
-      </span>
-      <span style={{ fontSize: '11px', color: section.ready ? section.accentColor : 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-        {section.summary}
-      </span>
-    </button>
-  );
+  const renderSidebarTab = (tab: typeof tabs[number]) => {
+    const section = tab.id !== 'about' ? sectionStatus[tab.id] : null;
+    const isActive = activeTab === tab.id;
+
+    return (
+      <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        aria-selected={activeTab === tab.id}
+        aria-controls={`settings-panel-${tab.id}`}
+        onClick={() => setActiveTab(tab.id)}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          borderRadius: '9px',
+          border: isActive ? '1px solid var(--border-medium)' : '1px solid transparent',
+          backgroundColor: isActive ? 'var(--bg-primary)' : 'transparent',
+          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '9px',
+          textAlign: 'left',
+          boxShadow: isActive ? '0 8px 18px rgba(0, 0, 0, 0.08)' : 'none'
+        }}
+      >
+        {section ? renderStatusDot(section) : (
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--text-tertiary)', flexShrink: 0 }} />
+        )}
+        <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '13px', fontWeight: isActive ? 700 : 600 }}>{tab.label}</span>
+          <span style={{ fontSize: '11px', color: section?.ready ? section.accentColor : 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {section ? section.summary : '版本与安全'}
+          </span>
+        </span>
+      </button>
+    );
+  };
 
   const activeSection = activeTab !== 'about' ? sectionStatus[activeTab] : null;
+  const contentColumnStyle: React.CSSProperties = {
+    maxWidth: activeTab === 'about' ? '680px' : '620px',
+    margin: '0 auto',
+    width: '100%'
+  };
 
   return (
     <div style={{
@@ -355,74 +372,61 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
         position: 'relative',
         backgroundColor: 'var(--bg-primary)',
         borderRadius: '12px',
-        width: 'min(820px, calc(100vw - 48px))',
+        width: 'min(920px, calc(100vw - 48px))',
         height: 'min(760px, calc(100vh - 48px))',
         maxWidth: 'calc(100vw - 32px)',
         maxHeight: 'calc(100vh - 32px)',
         display: 'grid',
-        gridTemplateRows: 'auto auto 1fr auto',
+        gridTemplateRows: 'auto 1fr auto',
         overflow: 'hidden',
         boxShadow: '0 22px 56px rgba(0, 0, 0, 0.32)',
         zIndex: 1
       }}>
         {/* 标签页 */}
-        <div style={{ padding: '16px 18px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-light)' }}>
-          <div
-            role="tablist"
-            aria-label="设置分类"
-            style={{
-              display: 'flex',
-              gap: '4px',
-              minWidth: 0,
-              overflowX: 'auto',
-              scrollbarWidth: 'thin',
-              paddingBottom: '1px'
-            }}
-          >
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                aria-controls={`settings-panel-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  padding: '8px 13px',
-                  borderRadius: '8px',
-                  border: activeTab === tab.id ? '1px solid var(--border-medium)' : '1px solid transparent',
-                  backgroundColor: activeTab === tab.id ? 'var(--bg-secondary)' : 'transparent',
-                  color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  fontSize: '13px',
-                  fontWeight: activeTab === tab.id ? '600' : '400',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {tab.id !== 'about' && renderStatusDot(sectionStatus[tab.id])}
-                {tab.label}
-              </button>
-            ))}
+        <div style={{ padding: '16px 18px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-light)' }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '16px', fontWeight: 700 }}>设置</h2>
+            <p style={{ margin: '3px 0 0', color: 'var(--text-tertiary)', fontSize: '12px' }}>连接、发布默认值与应用信息</p>
           </div>
           <button type="button" aria-label="关闭设置" onClick={onClose} style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>✕</button>
         </div>
 
-        {/* 内容 */}
-        <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-primary)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
-            {renderSectionSummary(sectionStatus.notion)}
-            {renderSectionSummary(sectionStatus.wechat)}
-            {renderSectionSummary(sectionStatus.wordpress)}
-            {renderSectionSummary(sectionStatus.bilibili)}
-          </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '210px minmax(0, 1fr)',
+          minHeight: 0
+        }}>
+          <aside
+            role="tablist"
+            aria-label="设置分类"
+            style={{
+              borderRight: '1px solid var(--border-light)',
+              backgroundColor: 'var(--bg-secondary)',
+              padding: '14px 12px',
+              overflowY: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {tabs.map(renderSidebarTab)}
+            </div>
+          </aside>
+
+          <div
+          id={`settings-panel-${activeTab}`}
+          role="tabpanel"
+          style={{
+            minHeight: 0,
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            padding: '20px 24px 26px'
+          }}
+        >
+          <div style={contentColumnStyle}>
           {activeSection && (
             <div style={{
-              marginTop: '10px',
-              padding: '9px 12px',
-              borderRadius: '8px',
+              marginBottom: '16px',
+              padding: '12px 14px',
+              borderRadius: '10px',
               border: `1px solid ${activeSection.ready ? `${activeSection.accentColor}44` : 'var(--border-light)'}`,
               backgroundColor: activeSection.ready ? `${activeSection.accentColor}10` : 'var(--bg-secondary)',
               color: activeSection.ready ? activeSection.accentColor : 'var(--text-secondary)',
@@ -442,18 +446,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
               )}
             </div>
           )}
-        </div>
-
-        <div
-          id={`settings-panel-${activeTab}`}
-          role="tabpanel"
-          style={{
-            minHeight: 0,
-            overflowY: 'auto',
-            overscrollBehavior: 'contain',
-            padding: '18px 24px 24px'
-          }}
-        >
           {activeTab === 'notion' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
@@ -573,8 +565,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                           登录账号
                         </p>
                         {bilibiliUser ? (
-                          <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
-                            {bilibiliUser.name} <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({bilibiliUser.mid})</span>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                              {bilibiliUser.name} <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({bilibiliUser.mid})</span>
+                            </div>
+                            {bilibiliUser.name === '登录状态待确认' && (
+                              <div style={{ marginTop: '3px', fontSize: '11px', color: 'var(--warning)' }}>
+                                用户信息接口暂不可用，上传前建议重新登录或检查网络代理
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>未登录</span>
@@ -865,9 +864,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
               </p>
             </div>
           )}
+          </div>
         </div>
 
         {/* 底部 - 仅在配置页显示 */}
+        </div>
+
         {activeTab !== 'about' && (
           <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', backgroundColor: 'var(--bg-primary)' }}>
             <div style={{ minWidth: 0 }}>
@@ -881,9 +883,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 </span>
               ) : <span />}
             </div>
-            <button onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-              {loading ? '保存中...' : '保存'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <button type="button" onClick={onClose} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-medium)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '13px', cursor: 'pointer' }}>
+                取消
+              </button>
+              <button type="button" onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+                {loading ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -11,7 +11,8 @@ const source = fs.readFileSync(
 test('settings modal keeps tabs and actions fixed while content scrolls', () => {
   assert.match(source, /height:\s*'min\(760px, calc\(100vh - 48px\)\)'/);
   assert.match(source, /display:\s*'grid'/);
-  assert.match(source, /gridTemplateRows:\s*'auto auto 1fr auto'/);
+  assert.match(source, /gridTemplateRows:\s*'auto 1fr auto'/);
+  assert.match(source, /gridTemplateColumns:\s*'210px minmax\(0, 1fr\)'/);
   assert.match(source, /minHeight:\s*0/);
   assert.match(source, /overflowY:\s*'auto'/);
   assert.match(source, /overscrollBehavior:\s*'contain'/);
@@ -22,5 +23,5 @@ test('settings modal tabs remain usable and screen-reader friendly', () => {
   assert.match(source, /role="tab"/);
   assert.match(source, /aria-selected=\{activeTab === tab\.id\}/);
   assert.match(source, /type="button"/);
-  assert.match(source, /overflowX:\s*'auto'/);
+  assert.match(source, /borderRight:\s*'1px solid var\(--border-light\)'/);
 });

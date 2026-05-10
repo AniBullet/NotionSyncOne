@@ -705,7 +705,7 @@ Current status: no Bilibili static/dynamic import warning is present in the late
 
 If warning comes from `node_modules/.pnpm/file-type@16.5.4/...`, do not change dependency in this task unless tests and build show a safe upgrade path.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -714,7 +714,12 @@ npm.cmd run check
 npm.cmd run build:dir
 ```
 
-- [ ] **Step 5: Commit**
+- Verified on 2026-05-10 after workbench sync-status UX changes:
+  - `npm.cmd run check`: 53 tests passed.
+  - `npm.cmd run build:dir`: completed successfully.
+  - Remaining warning is still only `file-type@16.5.4` dependency `eval`.
+
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -722,6 +727,8 @@ Run:
 git add src\main\services\BilibiliService.ts docs\superpowers\plans\2026-05-05-repo-stabilization-and-refactor.md
 git commit -m "chore: reduce build warning noise"
 ```
+
+No code commit was needed: the Bilibili static/dynamic import warning was already absent, and the remaining `file-type` warning is dependency-internal and documented as accepted build noise.
 
 ---
 

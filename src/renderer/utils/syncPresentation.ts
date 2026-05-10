@@ -22,6 +22,101 @@ export interface SyncFailureDetail {
   error: string;
 }
 
+export interface SyncFailureGuidance {
+  intent: 'settings' | 'retry';
+  primaryText: string;
+  secondaryText: string;
+  retryLabel: string;
+  settingsLabel: string;
+}
+
+export interface SyncFailureReadiness {
+  configured: boolean;
+  summary: string;
+}
+
+export const getSyncFailureGuidance = (
+  platform: SyncPlatform,
+  error: string,
+  readiness?: SyncFailureReadiness
+): SyncFailureGuidance => {
+  const platformLabel = PLATFORM_LABELS[platform];
+  const normalizedError = error.toLowerCase();
+  const retryLabel = '重试草稿';
+  const settingsLabel = '打开设置';
+
+  if (readiness && !readiness.configured) {
+    return {
+      intent: 'settings',
+      primaryText: `先补齐 ${platformLabel} 配置`,
+      secondaryText: readiness.summary,
+      retryLabel,
+      settingsLabel
+    };
+  }
+
+  if (
+    normalizedError.includes('401') ||
+    normalizedError.includes('403') ||
+    normalizedError.includes('unauthorized') ||
+    normalizedError.includes('forbidden') ||
+    normalizedError.includes('token') ||
+    normalizedError.includes('权限') ||
+    normalizedError.includes('认证') ||
+    normalizedError.includes('登录')
+  ) {
+    return {
+      intent: 'settings',
+      primaryText: `${platformLabel} 授权可能失效`,
+      secondaryText: '检查账号、密钥或登录状态后再重试。',
+      retryLabel,
+      settingsLabel
+    };
+  }
+
+  if (
+    normalizedError.includes('config') ||
+    normalizedError.includes('missing') ||
+    normalizedError.includes('required') ||
+    normalizedError.includes('未配置') ||
+    normalizedError.includes('未启用') ||
+    normalizedError.includes('缺少')
+  ) {
+    return {
+      intent: 'settings',
+      primaryText: `检查 ${platformLabel} 配置`,
+      secondaryText: readiness?.summary || '有必填项缺失或平台未启用。',
+      retryLabel,
+      settingsLabel
+    };
+  }
+
+  if (
+    normalizedError.includes('timeout') ||
+    normalizedError.includes('timed out') ||
+    normalizedError.includes('network') ||
+    normalizedError.includes('econn') ||
+    normalizedError.includes('超时') ||
+    normalizedError.includes('网络')
+  ) {
+    return {
+      intent: 'retry',
+      primaryText: '网络超时，建议稍后重试',
+      secondaryText: `${platformLabel} 服务或本机网络可能暂时不稳定。`,
+      retryLabel,
+      settingsLabel
+    };
+  }
+
+  return {
+    intent: 'retry',
+    primaryText: '可以先重试草稿',
+    secondaryText: `如果 ${platformLabel} 仍失败，再检查配置或平台侧状态。`,
+    retryLabel,
+    settingsLabel
+  };
+};
+
 export const getSyncBadgePresentation = (
   platform: SyncPlatform,
   state?: SyncState

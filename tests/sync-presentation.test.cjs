@@ -6,7 +6,8 @@ require('ts-node/register/transpile-only');
 const {
   PLATFORM_COLORS,
   collectSyncFailures,
-  getSyncBadgePresentation
+  getSyncBadgePresentation,
+  getSyncFailureGuidance
 } = require('../src/renderer/utils/syncPresentation.ts');
 
 const { SyncStatus } = require('../src/shared/types/sync.ts');
@@ -51,4 +52,28 @@ test('collectSyncFailures returns article title, platform, and fallback reason',
     { articleId: 'a1', title: 'Article One', platform: 'wechat', platformLabel: '微信', error: '微信权限不足' },
     { articleId: 'a1', title: 'Article One', platform: 'bilibili', platformLabel: 'B站', error: '未知错误' }
   ]);
+});
+
+test('sync failure guidance points configuration issues to settings', () => {
+  const guidance = getSyncFailureGuidance('bilibili', 'B站未启用', {
+    configured: false,
+    summary: '未启用'
+  });
+
+  assert.equal(guidance.intent, 'settings');
+  assert.equal(guidance.primaryText, '先补齐 B站 配置');
+  assert.equal(guidance.secondaryText, '未启用');
+  assert.equal(guidance.retryLabel, '重试草稿');
+});
+
+test('sync failure guidance keeps transient errors retryable', () => {
+  const guidance = getSyncFailureGuidance('wordpress', 'request timeout', {
+    configured: true,
+    summary: '可同步'
+  });
+
+  assert.equal(guidance.intent, 'retry');
+  assert.equal(guidance.primaryText, '网络超时，建议稍后重试');
+  assert.match(guidance.secondaryText, /WordPress/);
+  assert.equal(guidance.retryLabel, '重试草稿');
 });

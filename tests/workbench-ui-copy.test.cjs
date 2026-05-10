@@ -25,3 +25,10 @@ test('article sync badges render status dots instead of text abbreviations', () 
   assert.doesNotMatch(articleGrid, /getBadge\(wechatState,\s*'微'/);
   assert.doesNotMatch(articleGrid, /getBadge\(biliState,\s*'B'/);
 });
+
+test('failure panel offers next steps instead of reason only', () => {
+  assert.match(mainLayout, /getSyncFailureGuidance/);
+  assert.match(mainLayout, /打开设置/);
+  assert.match(mainLayout, /guidance\.retryLabel/);
+  assert.match(mainLayout, /aria-label=\{`重试 \$\{failure\.platformLabel\}/);
+});

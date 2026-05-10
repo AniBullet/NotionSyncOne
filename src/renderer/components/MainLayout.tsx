@@ -18,6 +18,7 @@ import {
 } from '../utils/workbenchStatus';
 import {
   collectSyncFailures,
+  getSyncFailureGuidance,
   PLATFORM_COLORS
 } from '../utils/syncPresentation';
 import type { SyncFailureDetail, SyncPlatform } from '../utils/syncPresentation';
@@ -389,6 +390,11 @@ const MainLayout: React.FC = () => {
     setShowSettings(true);
   };
 
+  const retryFailureAsDraft = async (failure: SyncFailureDetail) => {
+    setShowSyncFailures(false);
+    await doMultiSync([failure.articleId], failure.platform, 'draft');
+  };
+
   const renderReadinessChip = (platform: PlatformReadiness) => {
     const available = platform.configured;
     return (
@@ -490,104 +496,153 @@ const MainLayout: React.FC = () => {
     );
   };
 
-  const renderFailurePanel = (failures: SyncFailureDetail[]) => (
-    <section
-      role="dialog"
-      aria-label="同步失败原因"
-      style={{
-        position: 'absolute',
-        right: '20px',
-        bottom: '48px',
-        width: 'min(520px, calc(100% - 40px))',
-        maxHeight: '280px',
-        overflow: 'hidden',
-        backgroundColor: 'var(--bg-primary)',
-        border: '1px solid var(--border-light)',
-        borderRadius: '8px',
-        boxShadow: '0 16px 42px rgba(0,0,0,0.22)',
-        zIndex: 90
-      }}
-    >
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 14px',
-        borderBottom: '1px solid var(--border-light)'
-      }}>
-        <div>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>同步失败原因</div>
-          <div style={{ marginTop: '2px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-            {failures.length} 个任务需要处理
-          </div>
-        </div>
-        <button
-          onClick={() => setShowSyncFailures(false)}
-          aria-label="关闭失败原因"
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            border: '1px solid var(--border-light)',
-            backgroundColor: 'transparent',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: '16px'
-          }}
-          title="关闭"
-        >
-          ×
-        </button>
-      </div>
-      <div style={{ maxHeight: '214px', overflow: 'auto', padding: '8px' }}>
-        {failures.map((failure, index) => (
-          <div
-            key={`${failure.articleId}-${failure.platform}-${index}`}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '92px 1fr',
-              gap: '10px',
-              padding: '10px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--bg-secondary)',
-              marginBottom: index === failures.length - 1 ? 0 : '8px'
-            }}
-          >
-            <span style={{
-              alignSelf: 'start',
-              justifySelf: 'start',
-              padding: '3px 8px',
-              borderRadius: '999px',
-              backgroundColor: `${PLATFORM_COLORS[failure.platform]}18`,
-              color: PLATFORM_COLORS[failure.platform],
-              fontSize: '12px',
-              fontWeight: 700
-            }}>
-              {failure.platformLabel}
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <div
-                title={failure.title}
-                style={{
-                  color: 'var(--text-primary)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {failure.title}
-              </div>
-              <div style={{ marginTop: '4px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
-                {failure.error}
-              </div>
+  const renderFailurePanel = (failures: SyncFailureDetail[]) => {
+    const actionButtonStyle: React.CSSProperties = {
+      height: '32px',
+      padding: '0 10px',
+      borderRadius: '8px',
+      fontSize: '12px',
+      fontWeight: 700,
+      cursor: 'pointer'
+    };
+
+    return (
+      <section
+        role="dialog"
+        aria-label="同步失败原因"
+        style={{
+          position: 'absolute',
+          right: '20px',
+          bottom: '48px',
+          width: 'min(620px, calc(100% - 40px))',
+          maxHeight: '360px',
+          overflow: 'hidden',
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--border-light)',
+          borderRadius: '8px',
+          boxShadow: '0 16px 42px rgba(0,0,0,0.22)',
+          zIndex: 90
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 14px',
+          borderBottom: '1px solid var(--border-light)'
+        }}>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>同步失败处理</div>
+            <div style={{ marginTop: '2px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+              {failures.length} 个任务需要处理
             </div>
           </div>
-        ))}
-      </div>
-    </section>
-  );
+          <button
+            onClick={() => setShowSyncFailures(false)}
+            aria-label="关闭失败原因"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-light)',
+              backgroundColor: 'transparent',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: '16px'
+            }}
+            title="关闭"
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ maxHeight: '294px', overflow: 'auto', padding: '8px' }}>
+          {failures.map((failure, index) => {
+            const readiness = platformReadiness[failure.platform];
+            const guidance = getSyncFailureGuidance(failure.platform, failure.error, readiness);
+            const accent = PLATFORM_COLORS[failure.platform];
+
+            return (
+              <div
+                key={`${failure.articleId}-${failure.platform}-${index}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '92px 1fr',
+                  gap: '10px',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  marginBottom: index === failures.length - 1 ? 0 : '8px'
+                }}
+              >
+                <span style={{
+                  alignSelf: 'start',
+                  justifySelf: 'start',
+                  padding: '3px 8px',
+                  borderRadius: '999px',
+                  backgroundColor: `${accent}18`,
+                  color: accent,
+                  fontSize: '12px',
+                  fontWeight: 700
+                }}>
+                  {failure.platformLabel}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    title={failure.title}
+                    style={{
+                      color: 'var(--text-primary)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {failure.title}
+                  </div>
+                  <div style={{ marginTop: '5px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
+                    {failure.error}
+                  </div>
+                  <div style={{ marginTop: '8px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 700 }}>
+                    {guidance.primaryText}
+                  </div>
+                  <div style={{ marginTop: '3px', color: 'var(--text-tertiary)', fontSize: '12px', lineHeight: 1.45 }}>
+                    {guidance.secondaryText}
+                  </div>
+                  <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => retryFailureAsDraft(failure)}
+                      aria-label={`重试 ${failure.platformLabel}：${failure.title}`}
+                      style={{
+                        ...actionButtonStyle,
+                        border: `1px solid ${accent}66`,
+                        backgroundColor: `${accent}18`,
+                        color: accent
+                      }}
+                    >
+                      {guidance.retryLabel}
+                    </button>
+                    <button
+                      onClick={() => openSettingsTab(failure.platform)}
+                      aria-label={`打开 ${failure.platformLabel} 设置`}
+                      style={{
+                        ...actionButtonStyle,
+                        border: guidance.intent === 'settings' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-light)',
+                        backgroundColor: guidance.intent === 'settings' ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                        color: guidance.intent === 'settings' ? 'var(--error)' : 'var(--text-secondary)'
+                      }}
+                    >
+                      {guidance.settingsLabel}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
 
   return (
     <div style={{ 

@@ -740,12 +740,17 @@ No code commit was needed: the Bilibili static/dynamic import warning was alread
 - Configuration status detection: show which platforms can sync and which fields are missing. **Done for workbench/settings first pass.**
 - Workbench sync entry clarity: readable labels, compact controls, and platform readiness dots. **Done.**
 - Article cards: reduce repeated text, use compact status dots with accessible labels. **Done.**
-- Sync failure messages: convert raw service/API errors into user-readable next steps.
+- Sync failure messages: convert raw service/API errors into user-readable next steps. **Done for first pass: failure panel now shows guidance, retry-as-draft, and direct platform settings links.**
 - Long task progress: make WordPress/Bilibili status updates steadier.
 - Startup responsiveness: separate cached state display from refresh operations.
 - Real-window UI smoke review: verify actual default window layout, settings modal density, card spacing, and sync controls.
 
-Task 9 has started only for low-risk UI clarity work. The behavior-sensitive UX items above remain open until manual app smoke testing is complete.
+Task 9 has started with low-risk UI clarity work and first-pass sync failure recovery. Remaining behavior-sensitive UX items stay open until manual app smoke testing is complete.
+
+Verified on 2026-05-10:
+- `node --test tests\sync-presentation.test.cjs tests\workbench-ui-copy.test.cjs`
+- `npm.cmd run check`: 56 tests passed.
+- `npm.cmd run build:dir`: completed successfully; only the documented `file-type@16.5.4` dependency `eval` warning remains.
 
 ---
 

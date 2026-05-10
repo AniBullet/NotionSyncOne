@@ -19,6 +19,9 @@ interface IElectronAPI {
   openNotionPage: (url: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   showNotification: (title: string, body: string) => Promise<void>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<void>;
+  closeWindow: () => Promise<void>;
   onSyncStateChanged: (callback: (state: SyncState) => void) => void;
   testWechatConnection: (appId: string, appSecret: string) => Promise<void>;
   testWordPressConnection: (siteUrl: string, username: string, appPassword: string) => Promise<void>;
@@ -50,6 +53,9 @@ const electronApi: IElectronAPI = {
   getNotionPages: () => ipcRenderer.invoke('get-notion-pages'),
   openNotionPage: (url: string) => ipcRenderer.invoke('open-notion-url', url),
   openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window-toggle-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
   
   // 同步相关
   syncArticle: (pageId, publishMode) => ipcRenderer.invoke('sync-article', pageId, publishMode),

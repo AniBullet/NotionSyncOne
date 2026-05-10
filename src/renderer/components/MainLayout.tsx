@@ -30,6 +30,9 @@ const EMPTY_READINESS = getPlatformReadiness({
   wechat: { appId: '', appSecret: '' }
 });
 
+const dragRegionStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties & { WebkitAppRegion: 'drag' };
+const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: 'no-drag' };
+
 // 本地缓存 key
 const CACHE_KEY = 'notionsyncone_articles_cache';
 // 从 localStorage 读取缓存
@@ -644,6 +647,73 @@ const MainLayout: React.FC = () => {
     );
   };
 
+  const renderWindowControls = () => {
+    const baseButtonStyle: React.CSSProperties = {
+      ...noDragRegionStyle,
+      width: '34px',
+      height: '34px',
+      padding: 0,
+      borderRadius: '8px',
+      border: '1px solid transparent',
+      backgroundColor: 'transparent',
+      color: 'var(--text-secondary)',
+      cursor: 'pointer',
+      fontSize: '14px',
+      lineHeight: 1,
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease'
+    };
+
+    const setHover = (element: HTMLButtonElement, danger = false) => {
+      element.style.backgroundColor = danger ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-secondary)';
+      element.style.color = danger ? 'var(--error)' : 'var(--text-primary)';
+      element.style.borderColor = danger ? 'rgba(239, 68, 68, 0.24)' : 'var(--border-light)';
+    };
+
+    const clearHover = (element: HTMLButtonElement) => {
+      element.style.backgroundColor = 'transparent';
+      element.style.color = 'var(--text-secondary)';
+      element.style.borderColor = 'transparent';
+    };
+
+    return (
+      <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
+        <button
+          onClick={() => window.electron.minimizeWindow()}
+          aria-label="最小化窗口"
+          title="最小化"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          −
+        </button>
+        <button
+          onClick={() => window.electron.toggleMaximizeWindow()}
+          aria-label="最大化或还原窗口"
+          title="最大化/还原"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          □
+        </button>
+        <button
+          onClick={() => window.electron.closeWindow()}
+          aria-label="关闭窗口"
+          title="关闭"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget, true)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          ×
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div style={{ 
       height: '100vh', 
@@ -654,6 +724,7 @@ const MainLayout: React.FC = () => {
     }}>
       {/* 顶部导航栏 */}
       <header style={{ 
+        ...dragRegionStyle,
         backgroundColor: 'var(--bg-primary)',
         borderBottom: '1px solid var(--border-light)',
         padding: '12px 20px',
@@ -663,7 +734,7 @@ const MainLayout: React.FC = () => {
         flexShrink: 0
       }}>
         {/* 左侧：Logo 和统计 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src={iconUrl} alt="NotionSyncOne" style={{ width: '26px', height: '26px', borderRadius: '6px' }} />
             <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>NotionSyncOne</span>
@@ -730,7 +801,7 @@ const MainLayout: React.FC = () => {
         </div>
         
         {/* 右侧：平台按钮 + 刷新 + 设置 + 主题 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -795,6 +866,7 @@ const MainLayout: React.FC = () => {
           </button>
           
           <ThemeToggle />
+          {renderWindowControls()}
         </div>
       </header>
 

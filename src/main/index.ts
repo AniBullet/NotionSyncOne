@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'path';
 import { ConfigService } from './services/ConfigService';
 import { NotionService } from './services/NotionService';
@@ -105,6 +106,7 @@ async function createWindow() {
       minHeight: 700,  // 最小高度：确保设置弹窗和状态栏可见
       title: 'NotionSyncOne',
       icon: iconPath,
+      frame: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -159,6 +161,29 @@ async function createWindow() {
     console.error('创建窗口失败:', error);
   }
 }
+
+const getWindowFromEvent = (event: IpcMainInvokeEvent): BrowserWindow | null => (
+  BrowserWindow.fromWebContents(event.sender) || mainWindow
+);
+
+ipcMain.handle('window-minimize', (event) => {
+  getWindowFromEvent(event)?.minimize();
+});
+
+ipcMain.handle('window-toggle-maximize', (event) => {
+  const window = getWindowFromEvent(event);
+  if (!window) return;
+
+  if (window.isMaximized()) {
+    window.unmaximize();
+  } else {
+    window.maximize();
+  }
+});
+
+ipcMain.handle('window-close', (event) => {
+  getWindowFromEvent(event)?.close();
+});
 
 // 在内置浏览器窗口中打开 Notion 页面
 ipcMain.handle('open-notion-url', async (_event, url: string) => {

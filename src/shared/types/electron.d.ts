@@ -20,6 +20,9 @@ interface IElectronAPI {
   cancelSync(articleId: string): Promise<boolean>;
   openNotionPage(url: string): Promise<void>;
   openExternal(url: string): Promise<void>;
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<void>;
+  closeWindow(): Promise<void>;
   onSyncStateChanged(callback: (state: SyncState) => void): void;
 }
 
@@ -27,4 +30,4 @@ declare global {
   interface Window {
     electron: IElectronAPI;
   }
-} 
+}

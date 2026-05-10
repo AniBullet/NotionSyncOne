@@ -744,12 +744,18 @@ No code commit was needed: the Bilibili static/dynamic import warning was alread
 - Long task progress: make WordPress/Bilibili status updates steadier.
 - Startup responsiveness: separate cached state display from refresh operations.
 - Real-window UI smoke review: verify actual default window layout, settings modal density, card spacing, and sync controls.
+- Window chrome polish: remove the mismatched native title bar and move window controls into the workbench header. **Done for Windows-style custom chrome: main window is frameless, the header is draggable, and minimize/maximize/close live in the main panel.**
 
 Task 9 has started with low-risk UI clarity work and first-pass sync failure recovery. Remaining behavior-sensitive UX items stay open until manual app smoke testing is complete.
 
 Verified on 2026-05-10:
 - `node --test tests\sync-presentation.test.cjs tests\workbench-ui-copy.test.cjs`
 - `npm.cmd run check`: 56 tests passed.
+- `npm.cmd run build:dir`: completed successfully; only the documented `file-type@16.5.4` dependency `eval` warning remains.
+
+Verified custom window chrome on 2026-05-10:
+- `node --test tests\window-chrome.test.cjs`
+- `npm.cmd run check`: 59 tests passed.
 - `npm.cmd run build:dir`: completed successfully; only the documented `file-type@16.5.4` dependency `eval` warning remains.
 
 ---

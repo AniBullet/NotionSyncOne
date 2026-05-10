@@ -650,36 +650,39 @@ const MainLayout: React.FC = () => {
   const renderWindowControls = () => {
     const baseButtonStyle: React.CSSProperties = {
       ...noDragRegionStyle,
-      width: '34px',
-      height: '34px',
+      width: '42px',
+      height: '38px',
       padding: 0,
       borderRadius: '8px',
-      border: '1px solid transparent',
-      backgroundColor: 'transparent',
+      border: '1px solid var(--border-medium)',
+      backgroundColor: 'var(--bg-primary)',
       color: 'var(--text-secondary)',
       cursor: 'pointer',
-      fontSize: '14px',
+      fontSize: '16px',
       lineHeight: 1,
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
-      transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease'
+      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease'
     };
 
     const setHover = (element: HTMLButtonElement, danger = false) => {
       element.style.backgroundColor = danger ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-secondary)';
       element.style.color = danger ? 'var(--error)' : 'var(--text-primary)';
-      element.style.borderColor = danger ? 'rgba(239, 68, 68, 0.24)' : 'var(--border-light)';
+      element.style.borderColor = danger ? 'rgba(239, 68, 68, 0.42)' : 'var(--border-medium)';
+      element.style.boxShadow = '0 2px 8px rgba(0,0,0,0.10)';
     };
 
     const clearHover = (element: HTMLButtonElement) => {
-      element.style.backgroundColor = 'transparent';
+      element.style.backgroundColor = 'var(--bg-primary)';
       element.style.color = 'var(--text-secondary)';
-      element.style.borderColor = 'transparent';
+      element.style.borderColor = 'var(--border-medium)';
+      element.style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
     };
 
     return (
-      <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
+      <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
         <button
           onClick={() => window.electron.minimizeWindow()}
           aria-label="最小化窗口"

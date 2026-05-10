@@ -29,3 +29,11 @@ test('workbench renders draggable custom window controls', () => {
   assert.match(mainLayout, /closeWindow/);
   assert.match(mainLayout, /aria-label="最小化窗口"/);
 });
+
+test('custom window controls have clear hit targets and visible borders', () => {
+  assert.match(mainLayout, /width:\s*'42px'/);
+  assert.match(mainLayout, /height:\s*'38px'/);
+  assert.match(mainLayout, /border:\s*'1px solid var\(--border-medium\)'/);
+  assert.match(mainLayout, /gap:\s*'6px'/);
+  assert.match(mainLayout, /fontSize:\s*'16px'/);
+});

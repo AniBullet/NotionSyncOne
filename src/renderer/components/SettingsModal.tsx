@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { Config } from '../../shared/types/config';
 import { APP_VERSION, GITHUB_REPO } from '../../shared/constants';
+import { getSettingsSections, SettingsSectionStatus } from '../utils/settingsStatus';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,7 +22,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ checking: boolean; latest?: string; hasUpdate?: boolean }>({ checking: false });
-  const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string } | null>(null);
+  const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string; verifiedByCookie?: boolean } | null>(null);
+  const sectionStatus = getSettingsSections(config);
 
   useEffect(() => {
     if (isOpen) {
@@ -43,7 +45,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const loadBilibiliUser = async () => {
     try {
       const userInfo = await window.electron.ipcRenderer.invoke('get-bilibili-user');
-      setBilibiliUser(userInfo as { name: string; mid: string } | null);
+      setBilibiliUser(userInfo as { name: string; mid: string; verifiedByCookie?: boolean } | null);
     } catch (err) {
       console.error('加载B站用户信息失败:', err);
       setBilibiliUser(null);
@@ -138,8 +140,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
 
       await IpcService.saveConfig(configToSave);
       
-      setMessage({ type: 'success', text: '配置已保存' });
-      setTimeout(() => setMessage(null), 2000);
+      setMessage({ type: 'success', text: '配置已保存，状态已刷新' });
+      setTimeout(() => setMessage(null), 2500);
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : '保存失败' });
     } finally {
@@ -252,21 +254,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   if (!isOpen) return null;
 
   const tabs = [
-    { id: 'notion' as const, label: 'Notion', icon: '📝' },
-    { id: 'wechat' as const, label: '微信', icon: '💬' },
-    { id: 'wordpress' as const, label: 'WP', icon: '🌐' },
-    { id: 'bilibili' as const, label: 'B站', icon: '📹' },
-    { id: 'about' as const, label: '关于', icon: 'ℹ️' },
+    { id: 'notion' as const, label: 'Notion' },
+    { id: 'wechat' as const, label: '微信' },
+    { id: 'wordpress' as const, label: 'WP' },
+    { id: 'bilibili' as const, label: 'B站' },
+    { id: 'about' as const, label: '关于' },
   ];
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '8px 10px',
+    padding: '9px 11px',
     fontSize: '13px',
     color: 'var(--text-primary)',
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-medium)',
-    borderRadius: '6px',
+    borderRadius: '8px',
     outline: 'none',
     marginTop: '4px'
   };
@@ -279,12 +281,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   };
 
   const testBtnStyle: React.CSSProperties = {
-    padding: '5px 10px',
-    borderRadius: '5px',
+    padding: '7px 12px',
+    borderRadius: '8px',
     border: '1px solid var(--border-medium)',
     backgroundColor: 'transparent',
     color: 'var(--text-secondary)',
-    fontSize: '11px',
+    fontSize: '12px',
     cursor: 'pointer',
     marginTop: '8px'
   };
@@ -294,6 +296,64 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     textDecoration: 'none',
     cursor: 'pointer',
     fontSize: '12px'
+  };
+
+  const renderStatusDot = (section: SettingsSectionStatus) => (
+    <span style={{
+      width: '7px',
+      height: '7px',
+      borderRadius: '50%',
+      backgroundColor: section.ready ? section.accentColor : 'var(--warning)',
+      boxShadow: section.ready ? `0 0 0 3px ${section.accentColor}22` : 'none',
+      flexShrink: 0
+    }} />
+  );
+
+  const renderSidebarTab = (tab: typeof tabs[number]) => {
+    const section = tab.id !== 'about' ? sectionStatus[tab.id] : null;
+    const isActive = activeTab === tab.id;
+
+    return (
+      <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        aria-selected={activeTab === tab.id}
+        aria-controls={`settings-panel-${tab.id}`}
+        onClick={() => setActiveTab(tab.id)}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          borderRadius: '9px',
+          border: isActive ? '1px solid var(--border-medium)' : '1px solid transparent',
+          backgroundColor: isActive ? 'var(--bg-primary)' : 'transparent',
+          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '9px',
+          textAlign: 'left',
+          boxShadow: isActive ? '0 8px 18px rgba(0, 0, 0, 0.08)' : 'none'
+        }}
+      >
+        {section ? renderStatusDot(section) : (
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--text-tertiary)', flexShrink: 0 }} />
+        )}
+        <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '13px', fontWeight: isActive ? 700 : 600 }}>{tab.label}</span>
+          <span style={{ fontSize: '11px', color: section?.ready ? section.accentColor : 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {section ? section.summary : '版本与安全'}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
+  const activeSection = activeTab !== 'about' ? sectionStatus[activeTab] : null;
+  const contentColumnStyle: React.CSSProperties = {
+    maxWidth: activeTab === 'about' ? '680px' : '620px',
+    margin: '0 auto',
+    width: '100%'
   };
 
   return (
@@ -312,42 +372,80 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
         position: 'relative',
         backgroundColor: 'var(--bg-primary)',
         borderRadius: '12px',
-        width: '500px',
+        width: 'min(920px, calc(100vw - 48px))',
+        height: 'min(760px, calc(100vh - 48px))',
+        maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100vh - 32px)',
+        display: 'grid',
+        gridTemplateRows: 'auto 1fr auto',
         overflow: 'hidden',
-        boxShadow: '0 16px 32px rgba(0, 0, 0, 0.25)',
+        boxShadow: '0 22px 56px rgba(0, 0, 0, 0.32)',
         zIndex: 1
       }}>
         {/* 标签页 */}
-        <div style={{ padding: '16px 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: '2px' }}>
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: activeTab === tab.id ? 'var(--bg-tertiary)' : 'transparent',
-                  color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  fontSize: '13px',
-                  fontWeight: activeTab === tab.id ? '600' : '400',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <span style={{ fontSize: '11px' }}>{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
+        <div style={{ padding: '16px 18px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border-light)' }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '16px', fontWeight: 700 }}>设置</h2>
+            <p style={{ margin: '3px 0 0', color: 'var(--text-tertiary)', fontSize: '12px' }}>连接、发布默认值与应用信息</p>
           </div>
-          <button onClick={onClose} style={{ width: '24px', height: '24px', borderRadius: '6px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+          <button type="button" aria-label="关闭设置" onClick={onClose} style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--border-light)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}>✕</button>
         </div>
 
-        {/* 内容 */}
-        <div style={{ padding: '16px 24px' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '210px minmax(0, 1fr)',
+          minHeight: 0
+        }}>
+          <aside
+            role="tablist"
+            aria-label="设置分类"
+            style={{
+              borderRight: '1px solid var(--border-light)',
+              backgroundColor: 'var(--bg-secondary)',
+              padding: '14px 12px',
+              overflowY: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {tabs.map(renderSidebarTab)}
+            </div>
+          </aside>
+
+          <div
+          id={`settings-panel-${activeTab}`}
+          role="tabpanel"
+          style={{
+            minHeight: 0,
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            padding: '20px 24px 26px'
+          }}
+        >
+          <div style={contentColumnStyle}>
+          {activeSection && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px 14px',
+              borderRadius: '10px',
+              border: `1px solid ${activeSection.ready ? `${activeSection.accentColor}44` : 'var(--border-light)'}`,
+              backgroundColor: activeSection.ready ? `${activeSection.accentColor}10` : 'var(--bg-secondary)',
+              color: activeSection.ready ? activeSection.accentColor : 'var(--text-secondary)',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <span>
+                <b>{activeSection.label}</b>：{activeSection.summary}
+              </span>
+              {!activeSection.ready && activeSection.missingFields.length > 0 && (
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  补齐后保存即可更新状态
+                </span>
+              )}
+            </div>
+          )}
           {activeTab === 'notion' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
@@ -467,8 +565,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                           登录账号
                         </p>
                         {bilibiliUser ? (
-                          <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
-                            {bilibiliUser.name} <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({bilibiliUser.mid})</span>
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                              {bilibiliUser.name} <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>({bilibiliUser.mid})</span>
+                            </div>
+                            {bilibiliUser.verifiedByCookie && (
+                              <div style={{ marginTop: '3px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                已从登录 Cookie 读取到 UID，上传前会继续使用当前登录状态
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>未登录</span>
@@ -759,19 +864,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
               </p>
             </div>
           )}
+          </div>
         </div>
 
         {/* 底部 - 仅在配置页显示 */}
+        </div>
+
         {activeTab !== 'about' && (
-          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {message ? (
-              <span style={{ fontSize: '12px', color: message.type === 'success' ? '#6EE7B7' : '#FCA5A5' }}>
-                {message.type === 'success' ? '✓' : '✗'} {message.text}
-              </span>
-            ) : <span />}
-            <button onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-              {loading ? '保存中...' : '保存'}
-            </button>
+          <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', backgroundColor: 'var(--bg-primary)' }}>
+            <div style={{ minWidth: 0 }}>
+              {message ? (
+                <span style={{ fontSize: '12px', color: message.type === 'success' ? '#6EE7B7' : '#FCA5A5' }}>
+                  {message.type === 'success' ? '已完成' : '需要处理'}：{message.text}
+                </span>
+              ) : activeSection ? (
+                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                  当前页：{activeSection.summary}
+                </span>
+              ) : <span />}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <button type="button" onClick={onClose} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-medium)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '13px', cursor: 'pointer' }}>
+                取消
+              </button>
+              <button type="button" onClick={handleSave} disabled={loading} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary-green)', color: '#fff', fontSize: '13px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+                {loading ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
         )}
       </div>

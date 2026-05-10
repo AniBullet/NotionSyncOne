@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import { join } from 'path';
 import { ConfigService } from './services/ConfigService';
 import { NotionService } from './services/NotionService';
@@ -10,6 +11,7 @@ import { setupIpcHandlers } from './ipc/handlers';
 
 // 判断是否为开发环境
 const isDev = process.env.NODE_ENV === 'development';
+const shouldOpenDevTools = process.env.OPEN_DEVTOOLS === '1';
 
 // 获取图标路径（兼容开发和生产环境）
 function getIconPath(): string {
@@ -98,12 +100,13 @@ async function createWindow() {
     const iconPath = getIconPath();
     // 创建窗口
     mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      minWidth: 900,   // 最小宽度：确保界面不会过于拥挤
-      minHeight: 650,  // 最小高度：确保所有内容可见
+      width: 1360,
+      height: 860,
+      minWidth: 1100,  // 最小宽度：确保工具栏和卡片不会过于拥挤
+      minHeight: 700,  // 最小高度：确保设置弹窗和状态栏可见
       title: 'NotionSyncOne',
       icon: iconPath,
+      frame: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -150,14 +153,37 @@ async function createWindow() {
     // 隐藏菜单栏
     Menu.setApplicationMenu(null);
 
-    // 开发者工具（开发模式下自动打开）
-    if (isDev) {
+    // 开发者工具：需要时用 OPEN_DEVTOOLS=1 显式开启，避免默认挤占工作台。
+    if (isDev && shouldOpenDevTools) {
       mainWindow.webContents.openDevTools();
     }
   } catch (error) {
     console.error('创建窗口失败:', error);
   }
 }
+
+const getWindowFromEvent = (event: IpcMainInvokeEvent): BrowserWindow | null => (
+  BrowserWindow.fromWebContents(event.sender) || mainWindow
+);
+
+ipcMain.handle('window-minimize', (event) => {
+  getWindowFromEvent(event)?.minimize();
+});
+
+ipcMain.handle('window-toggle-maximize', (event) => {
+  const window = getWindowFromEvent(event);
+  if (!window) return;
+
+  if (window.isMaximized()) {
+    window.unmaximize();
+  } else {
+    window.maximize();
+  }
+});
+
+ipcMain.handle('window-close', (event) => {
+  getWindowFromEvent(event)?.close();
+});
 
 // 在内置浏览器窗口中打开 Notion 页面
 ipcMain.handle('open-notion-url', async (_event, url: string) => {
@@ -231,4 +257,4 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
-}); 
+});

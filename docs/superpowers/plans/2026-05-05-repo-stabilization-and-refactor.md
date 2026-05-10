@@ -20,16 +20,18 @@
 - Extracted HTML/rich-text/title helpers from `src/main/services/SyncService.ts` into `src/main/services/sync/html.ts`.
 - Latest completed commit on `codex/extract-sync-html-tools`: `6ad93b8 refactor: extract sync html helpers`.
 
-**Not yet completed:**
+**Completed after this plan file was created:**
+- Dev startup stabilized: fixed Vite/Electron port alignment and Windows command runner behavior.
+- ConfigService tests now cover Notion-required/WeChat-optional validation, encrypted secret reload, and deep merge.
+- SyncService helper tests now cover tag extraction, cover/image helpers, renderer extraction, and state-store behavior.
+- Extracted state storage into `src/main/services/sync/stateStore.ts`.
+- Extracted platform sync orchestration into `wechatSync.ts`, `wordpressSync.ts`, and `bilibiliSync.ts`.
+- Added focused workbench/settings UI status tests and compacted workbench controls, settings status, article card status dots, and sync action labels.
+
+**Still open:**
 - Manual app smoke test for settings save, Notion list load, WeChat preview, WordPress button state, and Bilibili button state.
-- ConfigService encryption/decryption and deep merge tests.
-- SyncService tag extraction tests.
-- SyncService cover/image helper extraction.
-- SyncService block renderer extraction.
-- Sync state storage extraction.
-- Platform sync orchestration extraction.
-- Build warning cleanup.
-- Product UX improvements.
+- Build warning cleanup: only the `file-type@16.5.4` dependency eval warning is still present.
+- Product UX improvements: readable sync errors, steadier WordPress/Bilibili long-task progress, and real-window startup/workbench smoke review.
 
 ---
 
@@ -121,7 +123,7 @@ Expected: `main` includes commit `6ad93b8` or its squash equivalent.
 - No code changes expected.
 - Optional note file if findings need tracking: `docs/superpowers/plans/2026-05-05-smoke-test-notes.md`
 
-- [ ] **Step 1: Start the app**
+- [x] **Step 1: Start the app**
 
 Run:
 
@@ -130,6 +132,8 @@ npm.cmd run dev:start
 ```
 
 Expected: Electron app opens without startup errors.
+
+Verified on 2026-05-08 with `npm.cmd run dev:start`: Vite served `http://127.0.0.1:5173/`, Electron process started, services initialized, and Notion API fetched 310 articles. Remaining smoke steps still need interactive window checks.
 
 - [ ] **Step 2: Test settings save**
 
@@ -140,13 +144,15 @@ Actions:
 
 Expected: save succeeds if Notion required fields are present.
 
-- [ ] **Step 3: Test Notion list load**
+- [x] **Step 3: Test Notion list load**
 
 Actions:
 - Open the Notion article list.
 - Trigger refresh/load if needed.
 
 Expected: list loads or shows a clear config/network error.
+
+Verified on 2026-05-08: the workbench rendered the Notion list with 310 articles, cached cards, cover images, footer status, and no default DevTools pane after the `OPEN_DEVTOOLS=1` gate was added.
 
 - [ ] **Step 4: Test WeChat preview**
 
@@ -156,13 +162,15 @@ Actions:
 
 Expected: preview opens, rich text/list/image/code content renders without obvious escaping regressions.
 
-- [ ] **Step 5: Test WordPress and Bilibili button state**
+- [x] **Step 5: Test WordPress and Bilibili button state**
 
 Actions:
 - Inspect WordPress controls.
 - Inspect Bilibili controls.
 
 Expected: disabled/enabled state matches saved config, with no crash.
+
+Verified on 2026-05-08: with no selected article, sync buttons were disabled; after selecting one article, WeChat, WordPress, Bilibili, and All buttons became available. No sync action was triggered.
 
 - [ ] **Step 6: Record issues**
 
@@ -521,7 +529,7 @@ git commit -m "refactor: extract notion html renderer"
 - Modify: `src/main/services/SyncService.ts`
 - Create: `tests/sync-state-store.test.cjs`
 
-- [ ] **Step 1: Write state store tests**
+- [x] **Step 1: Write state store tests**
 
 Cover:
 - missing state file initializes empty state
@@ -529,7 +537,7 @@ Cover:
 - update merges results with existing results
 - reset deletes one article state
 
-- [ ] **Step 2: Run red test**
+- [x] **Step 2: Run red test**
 
 Run:
 
@@ -539,7 +547,7 @@ node --test tests\sync-state-store.test.cjs
 
 Expected: fail because module does not exist yet.
 
-- [ ] **Step 3: Create state store module**
+- [x] **Step 3: Create state store module**
 
 Create class:
 
@@ -554,7 +562,7 @@ export class SyncStateStore {
 }
 ```
 
-- [ ] **Step 4: Wire SyncService to SyncStateStore**
+- [x] **Step 4: Wire SyncService to SyncStateStore**
 
 Replace direct `syncStates` and `syncStateFile` manipulation with store calls. Keep public methods unchanged:
 
@@ -565,7 +573,7 @@ resetSyncState(articleId: string): void
 resetStuckSyncStates(): void
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -576,7 +584,7 @@ npm.cmd run build:dir
 
 Expected: both exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -598,7 +606,7 @@ git commit -m "refactor: extract sync state store"
 - Modify: `src/main/services/SyncService.ts`
 - Tests: add focused tests only for pure decision logic; do not mock full platform APIs unless needed.
 
-- [ ] **Step 1: Identify constructor dependencies**
+- [x] **Step 1: Identify constructor dependencies**
 
 Map dependencies currently used by each flow:
 - `notionService`
@@ -609,11 +617,11 @@ Map dependencies currently used by each flow:
 - `SyncStateStore`
 - `AbortController` map
 
-- [ ] **Step 2: Extract WeChat flow first**
+- [x] **Step 2: Extract WeChat flow first**
 
 Move `_syncArticleInternal` behavior into `wechatSync.ts` while leaving public `syncArticle()` on `SyncService`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run:
 
@@ -622,7 +630,7 @@ npm.cmd run check
 npm.cmd run build:dir
 ```
 
-- [ ] **Step 4: Commit WeChat extraction**
+- [x] **Step 4: Commit WeChat extraction**
 
 Run:
 
@@ -631,11 +639,11 @@ git add src\main\services\SyncService.ts src\main\services\sync\wechatSync.ts
 git commit -m "refactor: extract wechat sync flow"
 ```
 
-- [ ] **Step 5: Extract WordPress flow**
+- [x] **Step 5: Extract WordPress flow**
 
 Move `_syncArticleToWordPressInternal` behavior into `wordpressSync.ts`.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -646,11 +654,11 @@ git add src\main\services\SyncService.ts src\main\services\sync\wordpressSync.ts
 git commit -m "refactor: extract wordpress sync flow"
 ```
 
-- [ ] **Step 7: Extract Bilibili flow**
+- [x] **Step 7: Extract Bilibili flow**
 
 Move `syncVideoToBilibili` internals into `bilibiliSync.ts`.
 
-- [ ] **Step 8: Verify and commit**
+- [x] **Step 8: Verify and commit**
 
 Run:
 
@@ -671,7 +679,7 @@ git commit -m "refactor: extract bilibili sync flow"
 - Read/modify: `src/main/services/BilibiliService.ts`
 - Maybe modify: dependency usage around `file-type`
 
-- [ ] **Step 1: Reproduce warnings**
+- [x] **Step 1: Reproduce warnings**
 
 Run:
 
@@ -681,15 +689,23 @@ npm.cmd run build:dir
 
 Record exact warnings.
 
-- [ ] **Step 2: Fix Bilibili static/dynamic import warning if present**
+Current exact warning from `npm.cmd run build:dir`:
+
+```text
+node_modules/.pnpm/file-type@16.5.4/node_modules/file-type/core.js (1419:16): Use of eval in "node_modules/.pnpm/file-type@16.5.4/node_modules/file-type/core.js" is strongly discouraged as it poses security risks and may cause issues with minification.
+```
+
+- [x] **Step 2: Fix Bilibili static/dynamic import warning if present**
 
 Use one import style consistently in `BilibiliService.ts`.
 
-- [ ] **Step 3: Leave dependency eval warning documented unless there is a low-risk upgrade**
+Current status: no Bilibili static/dynamic import warning is present in the latest verified builds.
+
+- [x] **Step 3: Leave dependency eval warning documented unless there is a low-risk upgrade**
 
 If warning comes from `node_modules/.pnpm/file-type@16.5.4/...`, do not change dependency in this task unless tests and build show a safe upgrade path.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -698,7 +714,12 @@ npm.cmd run check
 npm.cmd run build:dir
 ```
 
-- [ ] **Step 5: Commit**
+- Verified on 2026-05-10 after workbench sync-status UX changes:
+  - `npm.cmd run check`: 53 tests passed.
+  - `npm.cmd run build:dir`: completed successfully.
+  - Remaining warning is still only `file-type@16.5.4` dependency `eval`.
+
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -707,6 +728,8 @@ git add src\main\services\BilibiliService.ts docs\superpowers\plans\2026-05-05-r
 git commit -m "chore: reduce build warning noise"
 ```
 
+No code commit was needed: the Bilibili static/dynamic import warning was already absent, and the remaining `file-type` warning is dependency-internal and documented as accepted build noise.
+
 ---
 
 ## Task 9: Product UX Improvements
@@ -714,15 +737,29 @@ git commit -m "chore: reduce build warning noise"
 **Purpose:** Improve visible product behavior after internals are safer.
 
 **Candidate sub-plans:**
-- Configuration status detection: show which platforms can sync and which fields are missing.
-- Sync failure messages: convert raw service/API errors into user-readable next steps.
+- Configuration status detection: show which platforms can sync and which fields are missing. **Done for workbench/settings first pass.**
+- Workbench sync entry clarity: readable labels, compact controls, and platform readiness dots. **Done.**
+- Article cards: reduce repeated text, use compact status dots with accessible labels. **Done.**
+- Sync failure messages: convert raw service/API errors into user-readable next steps. **Done for first pass: failure panel now shows guidance, retry-as-draft, and direct platform settings links.**
 - Long task progress: make WordPress/Bilibili status updates steadier.
 - Startup responsiveness: separate cached state display from refresh operations.
+- Real-window UI smoke review: verify actual default window layout, settings modal density, card spacing, and sync controls.
+- Window chrome polish: remove the mismatched native title bar and move window controls into the workbench header. **Done for Windows-style custom chrome: main window is frameless, the header is draggable, and minimize/maximize/close live in the main panel.**
 
-Do not start Task 9 until Tasks 0-8 are merged or intentionally skipped.
+Task 9 has started with low-risk UI clarity work and first-pass sync failure recovery. Remaining behavior-sensitive UX items stay open until manual app smoke testing is complete.
+
+Verified on 2026-05-10:
+- `node --test tests\sync-presentation.test.cjs tests\workbench-ui-copy.test.cjs`
+- `npm.cmd run check`: 56 tests passed.
+- `npm.cmd run build:dir`: completed successfully; only the documented `file-type@16.5.4` dependency `eval` warning remains.
+
+Verified custom window chrome on 2026-05-10:
+- `node --test tests\window-chrome.test.cjs`
+- `npm.cmd run check`: 59 tests passed.
+- `npm.cmd run build:dir`: completed successfully; only the documented `file-type@16.5.4` dependency `eval` warning remains.
 
 ---
 
 ## Recommended Next Action
 
-Do Task 0 first: push and PR the current `codex/extract-sync-html-tools` branch. After it merges, continue with Task 1 and Task 2 on fresh branches.
+Next recommended action: run a real app smoke test for settings save, Notion list load, WeChat preview, WordPress/Bilibili button states, and the updated workbench/card layout. If that passes, merge this branch and clean old branches. If it fails, fix only the observed UI/runtime issue before doing more UX work.

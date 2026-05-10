@@ -8,6 +8,26 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+function sanitizeProxyEnv(env) {
+  const proxyKeys = [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy'
+  ];
+
+  proxyKeys.forEach((key) => {
+    const value = env[key];
+    if (!value) return;
+    const lower = String(value).trim().toLowerCase();
+    if (!(lower.startsWith('http://') || lower.startsWith('https://'))) {
+      delete env[key];
+    }
+  });
+}
+
 // 设置Windows终端为UTF-8编码（修复中文乱码）
 if (os.platform() === 'win32') {
   try {
@@ -27,6 +47,7 @@ console.log('');
 
 // 设置环境变量
 process.env.NODE_ENV = 'production';
+sanitizeProxyEnv(process.env);
 
 // 检查 Node.js 和 pnpm
 console.log('[1/4] 检查环境...');

@@ -4,6 +4,29 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-sans);
+}
+
+html {
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  line-height: 1.55;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* 微信公众号预览样式 */
 .wechat-preview {
   word-wrap: break-word;
@@ -39,4 +62,4 @@
 
 .wechat-preview h3 {
   font-size: 1.2em;
-} 
+}

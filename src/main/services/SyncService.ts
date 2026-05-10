@@ -7,7 +7,7 @@ import { LogService } from './LogService';
 import { NotionPage, NotionBlock } from '../../shared/types/notion';
 import { WeChatArticle } from '../../shared/types/wechat';
 import { WordPressArticle } from '../../shared/types/wordpress';
-import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { themes, ThemeStyles } from '../../shared/types/theme';
 import {
@@ -25,9 +25,12 @@ import {
   convertBlockToHtml as convertBlockToHtmlHelper,
   convertBlocksToHtml as convertBlocksToHtmlHelper,
 } from './sync/notionToHtml';
+import { SyncStateStore } from './sync/stateStore';
+import { syncArticleToWeChat } from './sync/wechatSync';
+import { syncArticleToWordPressFlow } from './sync/wordpressSync';
+import { syncVideoToBilibiliFlow } from './sync/bilibiliSync';
 import { app } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
 
 export class SyncService {
   private notionService: NotionService;
@@ -35,8 +38,7 @@ export class SyncService {
   private wordPressService: WordPressService | null = null;
   private bilibiliService: BilibiliService | null = null;
   private configService: ConfigService;
-  private syncStates: { [key: string]: SyncState } = {};
-  private syncStateFile: string;
+  private syncStateStore: SyncStateStore;
   // 跟踪正在进行的同步操作，用于取消
   private activeSyncControllers: Map<string, AbortController> = new Map();
 
@@ -52,8 +54,7 @@ export class SyncService {
     this.configService = configService;
     this.wordPressService = wordPressService || null;
     this.bilibiliService = bilibiliService || null;
-    this.syncStateFile = path.join(app.getPath('userData'), 'sync-states.json');
-    this.loadSyncStates();
+    this.syncStateStore = new SyncStateStore(path.join(app.getPath('userData'), 'sync-states.json'));
   }
 
   /**
@@ -146,102 +147,31 @@ export class SyncService {
     return getCoverImageUrlHelper(page);
   }
 
-  // 加载同步状态
-  private loadSyncStates() {
-    try {
-      if (fs.existsSync(this.syncStateFile)) {
-        const data = fs.readFileSync(this.syncStateFile, 'utf8');
-        this.syncStates = JSON.parse(data);
-        
-        const totalStates = Object.keys(this.syncStates).length;
-        console.log(`已加载 ${totalStates} 个同步状态`);
-        
-        // 启动时自动重置所有 SYNCING 状态为 FAILED（程序重启意味着之前的同步已中断）
-        let resetCount = 0;
-        for (const [articleId, state] of Object.entries(this.syncStates)) {
-          if (state.status === SyncStatus.SYNCING) {
-            this.syncStates[articleId] = {
-              ...state,
-              status: SyncStatus.FAILED,
-              error: '同步中断：程序重启',
-              lastSyncTime: Date.now()
-            };
-            resetCount++;
-          }
-        }
-        if (resetCount > 0) {
-          console.log(`已重置 ${resetCount} 个卡住的同步状态`);
-          this.saveSyncStates();
-        }
-      }
-    } catch (error) {
-      console.error('加载同步状态失败:', error);
-      this.syncStates = {};
-    }
-  }
-
-  // 保存同步状态
-  private saveSyncStates() {
-    try {
-      fs.writeFileSync(this.syncStateFile, JSON.stringify(this.syncStates, null, 2));
-      // 精简日志：只在开发模式下输出详细信息
-      if (process.env.NODE_ENV === 'development') {
-        console.log('同步状态已保存');
-      }
-    } catch (error) {
-      console.error('保存同步状态失败:', error);
-    }
-  }
-
-  // 更新同步状态
   private updateSyncState(articleId: string, status: SyncStatus, error?: string, results?: SyncState['results']): SyncState {
-    // 保留之前的 results，如果有新的 results 则合并
-    const existingState = this.syncStates[articleId];
-    const state: SyncState = {
-      articleId,
-      status,
-      lastSyncTime: Date.now(),
-      error,
-      results: results ? { ...existingState?.results, ...results } : existingState?.results
-    };
-    this.syncStates[articleId] = state;
-    this.saveSyncStates();
-    return state;
+    return this.syncStateStore.update(articleId, status, error, results);
   }
 
-  // 获取同步状态
   getSyncState(articleId: string): SyncState | undefined {
-    return this.syncStates[articleId];
+    return this.syncStateStore.get(articleId);
   }
 
-  // 获取所有同步状态
   getAllSyncStates(): { [key: string]: SyncState } {
-    return this.syncStates;
+    return this.syncStateStore.getAll();
   }
 
-  // 重置卡住的同步状态（如果同步时间超过3分钟，自动重置为失败）
   resetStuckSyncStates(): void {
-    const stuckTimeout = 3 * 60 * 1000; // 3分钟
-    const now = Date.now();
-    
-    for (const [articleId, state] of Object.entries(this.syncStates)) {
-      if (state.status === SyncStatus.SYNCING && state.lastSyncTime) {
-        const elapsed = now - state.lastSyncTime;
-        if (elapsed > stuckTimeout) {
-          LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
-          this.updateSyncState(articleId, SyncStatus.FAILED, '同步超时：操作时间过长，已自动重置');
-          // 清理可能残留的 controller
-          this.activeSyncControllers.delete(articleId);
-        }
-      }
+    const stuckTimeout = 3 * 60 * 1000;
+    const resetArticleIds = this.syncStateStore.resetStuck(stuckTimeout);
+
+    for (const articleId of resetArticleIds) {
+      LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
+      this.activeSyncControllers.delete(articleId);
     }
   }
 
-  // 手动重置指定文章的同步状态
   resetSyncState(articleId: string): void {
     LogService.log(`手动重置文章同步状态: ${articleId}`, 'SyncService');
-    delete this.syncStates[articleId];
-    this.saveSyncStates();
+    this.syncStateStore.reset(articleId);
   }
 
   async syncArticle(articleId: string, publishMode: 'publish' | 'draft' = 'publish'): Promise<SyncState> {
@@ -313,7 +243,7 @@ export class SyncService {
     }
     
     // 如果没有找到 controller，检查同步状态
-    const currentState = this.syncStates[articleId];
+    const currentState = this.syncStateStore.get(articleId);
     if (currentState && currentState.status === SyncStatus.SYNCING) {
       // 状态显示正在同步，但没有 controller，可能是状态不同步
       LogService.warn(`文章 ${articleId} 状态显示为同步中，但未找到对应的 controller，强制更新状态为已取消`, 'SyncService');
@@ -326,201 +256,20 @@ export class SyncService {
   }
 
   private async _syncArticleInternal(articleId: string, publishMode: 'publish' | 'draft' = 'publish', abortSignal?: AbortSignal): Promise<SyncState> {
-    try {
-      // 在开始前检查是否已取消
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-      
-      LogService.log('========== 开始同步文章 ==========', 'SyncService');
-      LogService.log(`文章ID: ${articleId}`, 'SyncService');
-      LogService.log(`发布模式: ${publishMode}`, 'SyncService');
-      this.updateSyncState(articleId, SyncStatus.SYNCING);
-      
-      // 再次检查是否已取消（在设置状态后）
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 验证服务是否初始化
-      if (!this.notionService || !this.weChatService) {
-        const error = '服务未初始化，请先保存正确的配置';
-        LogService.error(error, 'SyncService');
-        throw new Error(error);
-      }
-
-      // 获取 Notion 文章内容
-      LogService.log('正在获取文章属性...', 'SyncService');
-      let page;
-      try {
-        page = await this.notionService.getPageProperties(articleId);
-        LogService.log(`文章标题: ${page.title}`, 'SyncService');
-      } catch (error) {
-        const errorMsg = '获取文章属性失败，请检查 Notion API Key 和数据库 ID 是否正确';
-        LogService.error(errorMsg, 'SyncService');
-        LogService.error(error instanceof Error ? error.message : String(error), 'SyncService');
-        throw new Error(errorMsg);
-      }
-
-      if (!page || !page.properties) {
-        throw new Error('无法获取文章属性，请检查数据库 ID 是否正确');
-      }
-
-      // 记录文章属性信息（仅记录关键信息）
-      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
-      const mainImage = this.getCoverImageUrl(page);
-      if (mainImage) {
-        LogService.log(`封面图片: ${mainImage.substring(0, 60)}...`, 'SyncService');
-      }
-
-      // 检查是否已取消
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取文章内容
-      LogService.log('正在获取文章内容...', 'SyncService');
-      let blocks;
-      try {
-        blocks = await this.notionService.getPageContent(articleId);
-        LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
-      } catch (error) {
-        const errorMsg = '获取文章内容失败，请检查文章权限设置';
-        LogService.error(errorMsg, 'SyncService');
-        LogService.error(error instanceof Error ? error.message : String(error), 'SyncService');
-        throw new Error(errorMsg);
-      }
-
-      if (!blocks || blocks.length === 0) {
-        throw new Error('文章内容为空');
-      }
-
-      // 转换文章格式
-      LogService.log('正在转换文章格式...', 'SyncService');
-      LogService.log(`需要转换的块数量: ${blocks.length}`, 'SyncService');
-      
-      // **新增：提取所有图片URL**
-      const imageUrls = this.extractImageUrls(blocks, mainImage);
-      LogService.log(`提取到 ${imageUrls.length} 张图片`, 'SyncService');
-      
-      // **新增：批量上传图片到微信素材库**
-      const imageUrlMap = new Map<string, string>(); // 原始URL -> 微信服务器URL
-      const failedImages: string[] = []; // 记录失败的图片
-      
-      if (imageUrls.length > 0) {
-        LogService.log(`开始上传 ${imageUrls.length} 张图片到微信素材库`, 'SyncService');
-        for (let i = 0; i < imageUrls.length; i++) {
-          if (abortSignal?.aborted) {
-            throw new Error('同步已取消');
-          }
-          
-          const imageUrl = imageUrls[i];
-          try {
-            // 只显示进度，不显示每张图片的详细URL
-            LogService.log(`上传进度: ${i + 1}/${imageUrls.length}`, 'SyncService');
-            const filename = `content_image_${i + 1}.png`;
-            const uploadResult = await this.weChatService.uploadImage(imageUrl, abortSignal, filename);
-            
-            if (uploadResult.url) {
-              imageUrlMap.set(imageUrl, uploadResult.url);
-            } else {
-              failedImages.push(imageUrl);
-            }
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            LogService.warn(`图片 ${i + 1} 上传失败: ${errorMsg}`, 'SyncService');
-            failedImages.push(imageUrl);
-          }
-        }
-        
-        LogService.success(`图片上传完成: ${imageUrlMap.size}/${imageUrls.length} 成功`, 'SyncService');
-        
-        // 如果有失败的图片，给出简要提示
-        if (failedImages.length > 0) {
-          LogService.warn(`${failedImages.length} 张图片上传失败，建议检查图片URL是否可访问`, 'SyncService');
-        }
-      }
-      
-      // 使用之前已经获取的 linkStart 和 mainImage，以及图片URL映射
-      const weChatArticle = this.convertToWeChatArticle(page, blocks, mainImage, linkStart, imageUrlMap);
-      LogService.log(`转换完成，标题: ${weChatArticle.title}`, 'SyncService');
-      LogService.log(`内容长度: ${weChatArticle.content.length} 字符`, 'SyncService');
-      LogService.log(`原文链接: ${weChatArticle.contentSourceUrl || '无'}`, 'SyncService');
-      
-      // 如果内容为空，记录详细信息
-      if (!weChatArticle.content || weChatArticle.content.trim().length === 0) {
-        LogService.warn('警告：转换后的内容为空', 'SyncService');
-        LogService.warn(`块详情: ${JSON.stringify(blocks.map(b => ({ type: b.type, has_children: b.has_children, content_keys: Object.keys(b.content || {}) })))}`, 'SyncService');
-      }
-
-      if (!weChatArticle.title) {
-        throw new Error('文章标题不能为空');
-      }
-
-      // 检查内容是否为空（去除 HTML 标签后）
-      const contentWithoutTags = weChatArticle.content.replace(/<[^>]*>/g, '').trim();
-      if (!contentWithoutTags) {
-        LogService.warn('文章内容为空，但可能包含媒体内容（视频、文件等）', 'SyncService');
-        // 如果内容为空但有块，说明可能是纯媒体内容，添加提示
-        if (blocks.length > 0) {
-          const blockTypes = blocks.map(b => b.type).join(', ');
-          LogService.warn(`块类型: ${blockTypes}`, 'SyncService');
-          // 对于纯媒体内容，添加一个提示文本
-          weChatArticle.content = '<p>本文包含媒体内容，请查看原文链接。</p>' + weChatArticle.content;
-        } else {
-          throw new Error('文章内容不能为空');
-        }
-      }
-
-      // 发布到微信公众号
-      LogService.log(`========== 开始${publishMode === 'publish' ? '发布' : '保存草稿'}到微信公众号 ==========`, 'SyncService');
-      LogService.log(`文章标题: ${weChatArticle.title}`, 'SyncService');
-      LogService.log(`文章作者: ${weChatArticle.author || '未设置'}`, 'SyncService');
-      LogService.log(`文章摘要: ${weChatArticle.digest || '未设置'}`, 'SyncService');
-      
-      try {
-        await this.weChatService.publishArticle(weChatArticle, publishMode, abortSignal);
-        LogService.success(`========== 文章${publishMode === 'publish' ? '发布' : '保存草稿'}成功 ==========`, 'SyncService');
-      } catch (error) {
-        LogService.error(`========== ${publishMode === 'publish' ? '发布' : '保存草稿'}到微信失败 ==========`, 'SyncService');
-        // 保留原始错误信息
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        LogService.error(`错误: ${errorMessage}`, 'SyncService');
-        throw new Error(`${publishMode === 'publish' ? '发布' : '保存草稿'}到微信失败: ${errorMessage}`);
-      }
-
-      // 更新 Notion 中的添加时间（如果需要）
-      try {
-        const currentAddedTime = page.properties.AddedTime?.date?.start;
-        if (!currentAddedTime) {
-          await this.notionService.updatePageProperties(articleId, {
-            AddedTime: {
-              date: {
-                start: new Date().toISOString()
-              }
-            }
-          });
-        }
-      } catch (error) {
-        console.error('更新 Notion 时间失败:', error);
-        // 不抛出错误，因为文章已经发布成功
-      }
-
-      const successState = this.updateSyncState(articleId, SyncStatus.SUCCESS);
-      LogService.success('========== 同步完成，状态: 成功 ==========', 'SyncService');
-      return successState;
-    } catch (error) {
-      LogService.error('========== 同步文章失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      if (error instanceof Error && error.stack) {
-        LogService.error(`堆栈: ${error.stack}`, 'SyncService');
-      }
-      const failedState = this.updateSyncState(articleId, SyncStatus.FAILED, errorMessage);
-      LogService.log('========== 同步完成，状态: 失败 ==========', 'SyncService');
-      return failedState;
-    }
+    return syncArticleToWeChat(
+      {
+        notionService: this.notionService,
+        weChatService: this.weChatService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        extractImageUrls: (blocks, coverImageUrl) => this.extractImageUrls(blocks, coverImageUrl),
+        convertToWeChatArticle: (page, blocks, mainImageUrl, linkStart, imageUrlMap) =>
+          this.convertToWeChatArticle(page, blocks, mainImageUrl, linkStart, imageUrlMap),
+        updateSyncState: (id, status, error, results) => this.updateSyncState(id, status, error, results),
+      },
+      articleId,
+      publishMode,
+      abortSignal
+    );
   }
 
   convertToWeChatArticleForPreview(
@@ -810,119 +559,19 @@ export class SyncService {
     status: 'publish' | 'draft',
     abortSignal?: AbortSignal
   ): Promise<SyncState> {
-    const wpSyncKey = `wp_${articleId}`;
-    
-    try {
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      LogService.log('========== 开始同步文章到 WordPress ==========', 'SyncService');
-      LogService.log(`文章ID: ${articleId}`, 'SyncService');
-      LogService.log(`发布状态: ${status}`, 'SyncService');
-      this.updateSyncState(wpSyncKey, SyncStatus.SYNCING);
-
-      // 验证服务是否初始化
-      if (!this.notionService) {
-        throw new Error('Notion 服务未初始化');
-      }
-      if (!this.wordPressService) {
-        throw new Error('WordPress 服务未初始化，请先配置 WordPress 信息');
-      }
-
-      // 获取 Notion 文章内容
-      LogService.log('正在获取文章属性...', 'SyncService');
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取文章内容
-      LogService.log('正在获取文章内容...', 'SyncService');
-      const blocks = await this.notionService.getPageContent(articleId);
-      LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
-
-      if (!blocks || blocks.length === 0) {
-        throw new Error('文章内容为空');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取封面图片
-      const mainImage = this.getCoverImageUrl(page);
-      LogService.log(`========== WordPress 封面图片处理 ==========`, 'SyncService');
-      if (mainImage) {
-        LogService.log(`找到封面图片 URL: ${mainImage.substring(0, 80)}...`, 'SyncService');
-      } else {
-        LogService.warn(`未找到封面图片！请检查 Notion 页面是否设置了封面（Cover）`, 'SyncService');
-        LogService.warn(`支持的封面来源：1. 页面封面 2. Cover 属性 3. MainImage 属性`, 'SyncService');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 只上传封面图作为 WordPress 特色图片，文章内容使用外部图片链接
-      let featuredMediaId: number | undefined;
-      if (mainImage && this.wordPressService) {
-        try {
-          LogService.log('正在上传封面图片到 WordPress 媒体库...', 'SyncService');
-          LogService.log(`图片 URL: ${mainImage}`, 'SyncService');
-          const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
-          if (coverMedia && coverMedia.id) {
-            featuredMediaId = coverMedia.id;
-            LogService.success(`✓ 封面图片上传成功！`, 'SyncService');
-            LogService.success(`  media_id: ${coverMedia.id}`, 'SyncService');
-            LogService.success(`  source_url: ${coverMedia.source_url || '未返回'}`, 'SyncService');
-          } else {
-            LogService.error(`✗ 封面图片上传异常：API 返回数据缺少 id`, 'SyncService');
-            LogService.error(`  返回数据: ${JSON.stringify(coverMedia)}`, 'SyncService');
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          LogService.error(`✗ 封面图片上传失败: ${errorMsg}`, 'SyncService');
-          LogService.warn('文章将不设置特色图片（featured image）', 'SyncService');
-          // 如果是 Notion 临时 URL 过期，给出提示
-          if (mainImage.includes('secure.notion-static.com') || mainImage.includes('s3.us-west')) {
-            LogService.warn('提示：Notion 文件类型的图片 URL 有时效性，建议使用外部图片链接', 'SyncService');
-          }
-        }
-      } else if (!mainImage) {
-        LogService.warn('文章没有封面图片，将使用 WordPress 默认特色图片', 'SyncService');
-      }
-      
-      LogService.log(`featuredMediaId 最终值: ${featuredMediaId || '未设置'}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 转换文章格式（文章内图片直接使用外部 URL，不上传）
-      LogService.log('正在转换文章格式...', 'SyncService');
-      const wpArticle = this.convertToWordPressArticle(page, blocks, status, undefined, featuredMediaId);
-      LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
-      LogService.log(`文章 featured_media 字段: ${wpArticle.featured_media || '未设置'}`, 'SyncService');
-
-      // 发布到 WordPress
-      LogService.log(`========== 开始${status === 'publish' ? '发布' : '保存草稿'}到 WordPress ==========`, 'SyncService');
-      const post = await this.wordPressService.publishArticle(wpArticle, abortSignal);
-      
-      LogService.success(`========== WordPress ${status === 'publish' ? '发布' : '草稿保存'}成功 ==========`, 'SyncService');
-      LogService.log(`文章链接: ${post.link}`, 'SyncService');
-
-      const successState = this.updateSyncState(wpSyncKey, SyncStatus.SUCCESS);
-      return successState;
-    } catch (error) {
-      LogService.error('========== WordPress 同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncArticleToWordPressFlow(
+      {
+        notionService: this.notionService,
+        wordPressService: this.wordPressService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        convertToWordPressArticle: (page, blocks, wpStatus, imageUrlMap, featuredMediaId) =>
+          this.convertToWordPressArticle(page, blocks, wpStatus, imageUrlMap, featuredMediaId),
+        updateSyncState: (id, syncStatus, error, results) => this.updateSyncState(id, syncStatus, error, results),
+      },
+      articleId,
+      status,
+      abortSignal
+    );
   }
 
   /**
@@ -1148,186 +797,21 @@ export class SyncService {
     publishMode: 'draft' | 'publish' = 'draft',
     autoCompress: boolean = true
   ): Promise<SyncState> {
-    const biliSyncKey = `bili_${articleId}`;
-    
-    LogService.log('========== syncVideoToBilibili 被调用 ==========', 'SyncService');
-    LogService.log(`  - articleId: ${articleId}`, 'SyncService');
-    LogService.log(`  - publishMode: ${publishMode}`, 'SyncService');
-    LogService.log(`  - metadata.title: ${metadata?.title}`, 'SyncService');
-    LogService.log(`  - metadata.tid: ${metadata?.tid}`, 'SyncService');
-    LogService.log(`  - metadata.tags: [${(metadata?.tags || []).join(', ')}]`, 'SyncService');
-    
-    try {
-      if (!this.bilibiliService) {
-        throw new Error('Bilibili 服务未初始化');
-      }
-
-      // 创建 AbortController 用于取消
-      const abortController = new AbortController();
-      this.activeSyncControllers.set(biliSyncKey, abortController);
-
-      LogService.log('========== SyncService: 开始同步视频到B站 ==========', 'SyncService');
-      this.updateSyncState(biliSyncKey, SyncStatus.SYNCING);
-
-      // 1. 获取文章页面
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      // 2. 从 Notion 获取更多文章属性（用于简介模板）
-      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
-      const engine = page.properties.Engine?.select?.name || '';
-      const expectationsRate = page.properties.ExpectationsRate?.number;
-      
-      // 提取标签
-      const featureTag = page.properties.FeatureTag;
-      let tags: string[] = [];
-      if (featureTag) {
-        if (featureTag.type === 'select' && featureTag.select) {
-          tags = [featureTag.select.name];
-        } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
-          tags = featureTag.multi_select.map((tag: any) => tag.name);
-        }
-      }
-      
-      // 获取添加时间
-      const addedTimeProperty = page.properties.AddedTime;
-      let addedTime = '';
-      if (addedTimeProperty) {
-        if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
-          addedTime = addedTimeProperty.date.start;
-        } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
-          addedTime = addedTimeProperty.created_time;
-        }
-      }
-      if (!addedTime && page.addedTime) {
-        addedTime = page.addedTime;
-      }
-      
-      LogService.log(`文章属性 - 来源: ${from}, 作者: ${author}, 链接: ${linkStart}`, 'SyncService');
-      
-      // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
-      if (linkStart && !metadata.source) {
-        metadata.source = linkStart;
-      }
-      
-      // 自动获取封面图片（如果 metadata 中没有指定 cover）
-      if (!metadata.cover) {
-        const coverUrl = this.getCoverImageUrl(page);
-        if (coverUrl) {
-          metadata.cover = coverUrl;
-          LogService.log(`已自动获取封面图片: ${coverUrl.substring(0, 50)}...`, 'SyncService');
-        } else {
-          LogService.log('未找到封面图片', 'SyncService');
-        }
-      } else {
-        LogService.log(`使用指定的封面图片: ${metadata.cover.substring(0, 50)}...`, 'SyncService');
-      }
-      
-      // 将 Notion 属性添加到 metadata 中（用于简介模板）
-      if (!metadata.notionProps) {
-        metadata.notionProps = {};
-      }
-      metadata.notionProps = {
-        from,
-        author,
-        engine,
-        expectationsRate: expectationsRate ?? undefined,
-        tags,
-        addedTime,
-        linkStart
-      };
-
-      // 应用标题模板（如果配置了）
-      const biliConfig = this.configService.getBilibiliConfig();
-      if (biliConfig.titleTemplate && biliConfig.titleTemplate.trim()) {
-        const originalTitle = metadata.title;
-        metadata.title = biliConfig.titleTemplate.replace(/\{title\}/g, metadata.title);
-        LogService.log(`应用标题模板: ${originalTitle} -> ${metadata.title}`, 'SyncService');
-      }
-
-      // 3. 提取视频
-      LogService.log('正在提取视频...', 'SyncService');
-      const videoInfos = await this.notionService.extractVideos(articleId);
-      
-      if (videoInfos.length === 0) {
-        throw new Error('文章中没有找到视频');
-      }
-
-      LogService.log(`找到 ${videoInfos.length} 个视频`, 'SyncService');
-
-      // 4. 下载视频
-      const videos: BilibiliVideo[] = [];
-      for (let i = 0; i < videoInfos.length; i++) {
-        const videoInfo = videoInfos[i];
-        LogService.log(`正在下载视频 ${i + 1}/${videoInfos.length}...`, 'SyncService');
-        
-        const video: BilibiliVideo = {
-          url: videoInfo.url,
-          caption: videoInfo.caption,
-          type: videoInfo.type
-        };
-
-        const localPath = await this.bilibiliService.downloadVideo(
-          video,
-          abortController.signal,
-          articleId  // 传递 articleId 用于进度追踪
-        );
-        
-        video.localPath = localPath;
-        videos.push(video);
-      }
-
-      // 5. 准备上传选项
-      const uploadOptions: BilibiliUploadOptions = {
-        publishMode,
-        metadata,
-        videos,
-        autoCompress,
-        compressionQuality: 23,
-        articleId  // 添加 articleId 用于进度追踪
-      };
-
-      // 5. 上传到B站
-      LogService.log(`开始上传到B站，模式: ${publishMode}`, 'SyncService');
-      const result = await this.bilibiliService.uploadVideo(
-        uploadOptions,
-        abortController.signal
-      );
-
-      LogService.success('========== B站同步成功 ==========', 'SyncService');
-      if (result.link) {
-        LogService.log(`稿件链接: ${result.link}`, 'SyncService');
-      }
-      if (result.bvid) {
-        LogService.log(`稿件BV号: ${result.bvid}`, 'SyncService');
-      }
-
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-
-      // 保存B站上传结果到同步状态（包含标题用于后续验证）
-      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS, undefined, {
-        bilibili: {
-          bvid: result.bvid,
-          link: result.link,
-          aid: result.aid,
-          title: metadata.title  // 保存视频标题
-        }
-      });
-      return successState;
-    } catch (error) {
-      LogService.error('========== B站同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-      
-      const failedState = this.updateSyncState(biliSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncVideoToBilibiliFlow(
+      {
+        notionService: this.notionService,
+        bilibiliService: this.bilibiliService,
+        configService: this.configService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        setActiveController: (syncKey, controller) => this.activeSyncControllers.set(syncKey, controller),
+        deleteActiveController: (syncKey) => this.activeSyncControllers.delete(syncKey),
+        updateSyncState: (id, status, error, results) => this.updateSyncState(id, status, error, results),
+      },
+      articleId,
+      metadata,
+      publishMode,
+      autoCompress
+    );
   }
 
   /**

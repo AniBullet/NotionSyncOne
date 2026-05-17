@@ -149,7 +149,7 @@ https://www.notion.so/workspace/abc123def456?v=789xyz
 
 ```bash
 # Windows 用户
-winget install -e --id ForgQi.biliup-rs
+uv tool install biliup
 winget install BtbN.FFmpeg.GPL
 ```
 

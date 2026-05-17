@@ -5,6 +5,7 @@ import { LogService } from '../LogService';
 import { NotionPage } from '../../../shared/types/notion';
 import { BilibiliMetadata, BilibiliUploadOptions, BilibiliVideo } from '../../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../../shared/types/sync';
+import { getNotionProperty, readDateValue, readPlainText, readSelectNames } from './notionFields';
 
 export interface BilibiliSyncFlowContext {
   notionService: NotionService;
@@ -46,36 +47,22 @@ export async function syncVideoToBilibiliFlow(
     const page = await context.notionService.getPageProperties(articleId);
     LogService.log(`文章标题: ${page.title}`, 'SyncService');
 
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
-    const engine = page.properties.Engine?.select?.name || '';
-    const expectationsRate = page.properties.ExpectationsRate?.number;
+    const notionConfig = context.configService.getNotionConfig();
+    const linkStart = readPlainText(getNotionProperty(page, notionConfig, 'linkStart'));
+    const from = readPlainText(getNotionProperty(page, notionConfig, 'from'));
+    const author = readPlainText(getNotionProperty(page, notionConfig, 'author'));
+    const engineProperty = getNotionProperty(page, notionConfig, 'engine');
+    const engine = readSelectNames(engineProperty)[0] || readPlainText(engineProperty);
+    const expectationsRate = getNotionProperty(page, notionConfig, 'expectationsRate')?.number;
 
-    const featureTag = page.properties.FeatureTag;
-    let tags: string[] = [];
-    if (featureTag) {
-      if (featureTag.type === 'select' && featureTag.select) {
-        tags = [featureTag.select.name];
-      } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
-        tags = featureTag.multi_select.map((tag: any) => tag.name);
-      }
-    }
+    const tags = readSelectNames(getNotionProperty(page, notionConfig, 'featureTag'));
 
-    const addedTimeProperty = page.properties.AddedTime;
-    let addedTime = '';
-    if (addedTimeProperty) {
-      if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
-        addedTime = addedTimeProperty.date.start;
-      } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
-        addedTime = addedTimeProperty.created_time;
-      }
-    }
+    let addedTime = readDateValue(getNotionProperty(page, notionConfig, 'addedTime'));
     if (!addedTime && page.addedTime) {
       addedTime = page.addedTime;
     }
 
-    LogService.log(`文章属性 - 来源: ${from}, 作者: ${author}, 链接: ${linkStart}`, 'SyncService');
+    LogService.log(`文章属性 - 来源平台: ${from}, 原作者: ${author}, 链接: ${linkStart}`, 'SyncService');
 
     if (linkStart && !metadata.source) {
       metadata.source = linkStart;

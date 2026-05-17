@@ -242,7 +242,7 @@ node run-dev.js
 
 ```bash
 # 安装 biliup（B站上传工具）
-winget install -e --id ForgQi.biliup-rs
+uv tool install biliup
 
 # 安装 FFmpeg（视频处理工具）
 winget install BtbN.FFmpeg.GPL

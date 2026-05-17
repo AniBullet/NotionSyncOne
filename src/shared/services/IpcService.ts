@@ -3,6 +3,7 @@ import { SyncState } from '../types/sync';
 import { Config } from '../types/config';
 import { NotionConfig } from '../types/notion';
 import { WordPressCategory, WordPressTag } from '../types/wordpress';
+import { BilibiliSeason } from '../types/bilibili';
 
 export class IpcService {
   /**
@@ -234,6 +235,13 @@ export class IpcService {
    */
   static async getBilibiliSyncStatus(articleId: string): Promise<SyncState> {
     return window.electron.ipcRenderer.invoke('get-bilibili-sync-status', articleId);
+  }
+
+  /**
+   * 获取用户 B站 合集列表（含分组）
+   */
+  static async getBilibiliSeasons(): Promise<BilibiliSeason[]> {
+    return window.electron.ipcRenderer.invoke('bilibili-get-seasons');
   }
 
   /**

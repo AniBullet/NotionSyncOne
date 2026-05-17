@@ -60,6 +60,7 @@ export class ConfigService {
     return {
       notion: { apiKey: '', databaseId: '' },
       wechat: { appId: '', appSecret: '' },
+      wordpress: { enabled: false, siteUrl: '', username: '', appPassword: '' },
       bilibili: { enabled: false }
     };
   }
@@ -213,7 +214,9 @@ export class ConfigService {
     }
 
     const encryptedConfig = this.encryptConfig(config);
-    await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+    const tempPath = `${this.configPath}.tmp`;
+    await fs.writeFile(tempPath, JSON.stringify(encryptedConfig, null, 2));
+    await fs.rename(tempPath, this.configPath);
   }
 
   async init(): Promise<void> {
@@ -313,9 +316,7 @@ export class ConfigService {
       }
       
       // 加密敏感字段并保存
-      const encryptedConfig = this.encryptConfig(this.config);
-      
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       logger.log('✓ 配置已安全保存（敏感字段已加密）', 'ConfigService');
     } catch (error) {
@@ -337,8 +338,7 @@ export class ConfigService {
         mkdirSync(configDir, { recursive: true });
       }
       
-      const encryptedConfig = this.encryptConfig(this.config);
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       await this.loadConfig();
     } catch (error) {
@@ -363,8 +363,7 @@ export class ConfigService {
     try {
       this.config.bilibili = { ...this.config.bilibili, ...config };
       
-      const encryptedConfig = this.encryptConfig(this.config);
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       await this.loadConfig();
     } catch (error) {

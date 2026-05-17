@@ -1,4 +1,5 @@
 export interface WordPressConfig {
+  enabled?: boolean;      // 是否启用 WordPress 同步
   siteUrl: string;        // WordPress 站点 URL (例如: https://example.com)
   username: string;       // 用户名
   appPassword: string;    // 应用密码 (WordPress 5.6+)

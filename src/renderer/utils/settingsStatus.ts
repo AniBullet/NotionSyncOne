@@ -32,11 +32,11 @@ export const getSettingsSections = (config: Config): SettingsSections => {
     hasValue(config.wechat?.appSecret) ? '' : 'AppSecret'
   ].filter(Boolean);
 
-  const wordpressMissing = [
+  const wordpressMissing = config.wordpress?.enabled ? [
     hasValue(config.wordpress?.siteUrl) ? '' : '站点 URL',
     hasValue(config.wordpress?.username) ? '' : '用户名',
     hasValue(config.wordpress?.appPassword) ? '' : '应用密码'
-  ].filter(Boolean);
+  ].filter(Boolean) : ['未启用'];
 
   const bilibiliMissing = config.bilibili?.enabled ? [] : ['未启用'];
 
@@ -65,7 +65,7 @@ export const getSettingsSections = (config: Config): SettingsSections => {
       ready: wordpressMissing.length === 0,
       optional: true,
       missingFields: wordpressMissing,
-      summary: summarize(wordpressMissing, '可同步'),
+      summary: config.wordpress?.enabled ? summarize(wordpressMissing, '可同步') : '未启用',
       accentColor: PLATFORM_COLORS.wordpress
     },
     bilibili: {

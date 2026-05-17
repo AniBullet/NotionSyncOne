@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
 import { BilibiliMetadata } from '../../shared/types/bilibili';
+import { Config } from '../../shared/types/config';
 import { IpcService } from '../../shared/services/IpcService';
 import { APP_VERSION } from '../../shared/constants';
 import ArticleGrid from './ArticleGrid';
@@ -70,6 +71,12 @@ const MainLayout: React.FC = () => {
   const [hasWordPressConfig, setHasWordPressConfig] = useState(false);
   const [hasBilibiliConfig, setHasBilibiliConfig] = useState(false);
   const [platformReadiness, setPlatformReadiness] = useState<WorkbenchReadiness>(EMPTY_READINESS);
+  const [config, setConfig] = useState<Config>({
+    notion: { apiKey: '', databaseId: '' },
+    wechat: { appId: '', appSecret: '' },
+    wordpress: { enabled: false, siteUrl: '', username: '', appPassword: '' },
+    bilibili: { enabled: false }
+  });
   const [openSyncMenu, setOpenSyncMenu] = useState<SyncTarget | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about'>('notion');
@@ -83,6 +90,8 @@ const MainLayout: React.FC = () => {
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState<string>('就绪');
   const [showSyncFailures, setShowSyncFailures] = useState(false);
+  const [dismissedFailures, setDismissedFailures] = useState<Set<string>>(new Set());
+  const [expandedFailures, setExpandedFailures] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -174,11 +183,12 @@ const MainLayout: React.FC = () => {
       }
       setError(null);
       
-      const [pages, states, config] = await Promise.all([
+      const [pages, states, fetchedConfig] = await Promise.all([
         IpcService.getNotionPages(forceRefresh),
         window.electron.ipcRenderer.invoke('get-all-sync-states'),
         IpcService.getConfig()
       ]);
+      setConfig(fetchedConfig);
       
       // 更新文章并保存到本地缓存
       setArticles(pages);
@@ -202,7 +212,7 @@ const MainLayout: React.FC = () => {
       setBiliSyncStates(biliStates);
       
       // 检查配置
-      const readiness = getPlatformReadiness(config);
+      const readiness = getPlatformReadiness(fetchedConfig);
       setPlatformReadiness(readiness);
       setHasWordPressConfig(readiness.wordpress.configured);
       setHasBilibiliConfig(readiness.bilibili.configured);
@@ -234,7 +244,7 @@ const MainLayout: React.FC = () => {
       return;
     }
 
-    const targetText = target === 'wechat' ? '微信' : target === 'wordpress' ? 'WordPress' : target === 'bilibili' ? 'B站' : '全部平台';
+    const targetText = target === 'wechat' ? '微信' : target === 'bilibili' ? 'B站' : target === 'wordpress' ? 'WordPress' : '全部平台';
     const modeText = mode === 'draft' ? '草稿' : '发布';
     const titles = Array.from(selectedArticles).map(id => articles.find(a => a.id === id)?.title || id).slice(0, 3);
     const more = selectedArticles.size > 3 ? `...等 ${selectedArticles.size} 篇` : '';
@@ -387,6 +397,16 @@ const MainLayout: React.FC = () => {
   const wpSynced = Object.values(wpSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const biliSynced = Object.values(biliSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const syncFailures = collectSyncFailures(articles, syncStates, wpSyncStates, biliSyncStates);
+  const failureKey = (f: SyncFailureDetail) => `${f.articleId}-${f.platform}`;
+  const visibleFailures = syncFailures.filter(f => !dismissedFailures.has(failureKey(f)));
+  const enabledSyncTargets: SyncTarget[] = [
+    'wechat',
+    ...(config.bilibili?.enabled ? ['bilibili' as const] : []),
+    ...(config.wordpress?.enabled ? ['wordpress' as const] : [])
+  ];
+  const visibleSyncTargets: SyncTarget[] = enabledSyncTargets.length > 1
+    ? [...enabledSyncTargets, 'both']
+    : enabledSyncTargets;
 
   const openSettingsTab = (tab: 'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about') => {
     setSettingsTab(tab);
@@ -396,6 +416,22 @@ const MainLayout: React.FC = () => {
   const retryFailureAsDraft = async (failure: SyncFailureDetail) => {
     setShowSyncFailures(false);
     await doMultiSync([failure.articleId], failure.platform, 'draft');
+  };
+
+  const resolveFailure = async (failure: SyncFailureDetail) => {
+    try {
+      await window.electron.ipcRenderer.invoke('clear-platform-sync-state', failure.articleId, failure.platform);
+    } catch {
+      // 后端清除失败时只做 UI 层忽略
+    }
+    // 同步清除本地 state，不等下次 loadData
+    if (failure.platform === 'wechat') {
+      setSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    } else if (failure.platform === 'bilibili') {
+      setBiliSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    } else {
+      setWpSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    }
   };
 
   const renderReadinessChip = (platform: PlatformReadiness) => {
@@ -501,12 +537,21 @@ const MainLayout: React.FC = () => {
 
   const renderFailurePanel = (failures: SyncFailureDetail[]) => {
     const actionButtonStyle: React.CSSProperties = {
-      height: '32px',
+      height: '30px',
       padding: '0 10px',
-      borderRadius: '8px',
+      borderRadius: '6px',
       fontSize: '12px',
       fontWeight: 700,
       cursor: 'pointer'
+    };
+
+    const dismissAll = () => {
+      setDismissedFailures(prev => {
+        const next = new Set(prev);
+        failures.forEach(f => next.add(failureKey(f)));
+        return next;
+      });
+      setShowSyncFailures(false);
     };
 
     return (
@@ -517,8 +562,8 @@ const MainLayout: React.FC = () => {
           position: 'absolute',
           right: '20px',
           bottom: '48px',
-          width: 'min(620px, calc(100% - 40px))',
-          maxHeight: '360px',
+          width: 'min(580px, calc(100% - 40px))',
+          maxHeight: '400px',
           overflow: 'hidden',
           backgroundColor: 'var(--bg-primary)',
           border: '1px solid var(--border-light)',
@@ -531,114 +576,210 @@ const MainLayout: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 14px',
+          padding: '10px 12px',
           borderBottom: '1px solid var(--border-light)'
         }}>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>同步失败处理</div>
-            <div style={{ marginTop: '2px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
-              {failures.length} 个任务需要处理
-            </div>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            同步失败处理
+            <span style={{ marginLeft: '8px', fontSize: '12px', fontWeight: 400, color: 'var(--text-tertiary)' }}>
+              {failures.length} 个
+            </span>
           </div>
-          <button
-            onClick={() => setShowSyncFailures(false)}
-            aria-label="关闭失败原因"
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)',
-              backgroundColor: 'transparent',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontSize: '16px'
-            }}
-            title="关闭"
-          >
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              onClick={dismissAll}
+              style={{
+                height: '28px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+              title="全部标为已读"
+            >
+              全部忽略
+            </button>
+            <button
+              onClick={() => setShowSyncFailures(false)}
+              aria-label="关闭失败原因"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '16px',
+                lineHeight: 1
+              }}
+              title="关闭"
+            >
+              ×
+            </button>
+          </div>
         </div>
-        <div style={{ maxHeight: '294px', overflow: 'auto', padding: '8px' }}>
+        <div style={{ maxHeight: '344px', overflow: 'auto', padding: '6px' }}>
           {failures.map((failure, index) => {
+            const key = failureKey(failure);
+            const isExpanded = expandedFailures.has(key);
             const readiness = platformReadiness[failure.platform];
             const guidance = getSyncFailureGuidance(failure.platform, failure.error, readiness);
             const accent = PLATFORM_COLORS[failure.platform];
 
+            const toggleExpand = () => {
+              setExpandedFailures(prev => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              });
+            };
+
+            const dismiss = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setDismissedFailures(prev => new Set(prev).add(key));
+            };
+
             return (
               <div
-                key={`${failure.articleId}-${failure.platform}-${index}`}
+                key={key}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '92px 1fr',
-                  gap: '10px',
-                  padding: '10px',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   backgroundColor: 'var(--bg-secondary)',
-                  marginBottom: index === failures.length - 1 ? 0 : '8px'
+                  marginBottom: index === failures.length - 1 ? 0 : '4px',
+                  overflow: 'hidden'
                 }}
               >
-                <span style={{
-                  alignSelf: 'start',
-                  justifySelf: 'start',
-                  padding: '3px 8px',
-                  borderRadius: '999px',
-                  backgroundColor: `${accent}18`,
-                  color: accent,
-                  fontSize: '12px',
-                  fontWeight: 700
-                }}>
-                  {failure.platformLabel}
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div
+                {/* 标题行（始终显示，可点击展开） */}
+                <div
+                  onClick={toggleExpand}
+                  role="button"
+                  aria-expanded={isExpanded}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <span style={{
+                    flexShrink: 0,
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    backgroundColor: `${accent}18`,
+                    color: accent,
+                    fontSize: '11px',
+                    fontWeight: 700
+                  }}>
+                    {failure.platformLabel}
+                  </span>
+                  <span
                     title={failure.title}
                     style={{
+                      flex: 1,
                       color: 'var(--text-primary)',
                       fontSize: '13px',
-                      fontWeight: 600,
+                      fontWeight: 500,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
+                      whiteSpace: 'nowrap',
+                      minWidth: 0
                     }}
                   >
                     {failure.title}
-                  </div>
-                  <div style={{ marginTop: '5px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
-                    {failure.error}
-                  </div>
-                  <div style={{ marginTop: '8px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 700 }}>
-                    {guidance.primaryText}
-                  </div>
-                  <div style={{ marginTop: '3px', color: 'var(--text-tertiary)', fontSize: '12px', lineHeight: 1.45 }}>
-                    {guidance.secondaryText}
-                  </div>
-                  <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => retryFailureAsDraft(failure)}
-                      aria-label={`重试 ${failure.platformLabel}：${failure.title}`}
-                      style={{
-                        ...actionButtonStyle,
-                        border: `1px solid ${accent}66`,
-                        backgroundColor: `${accent}18`,
-                        color: accent
-                      }}
-                    >
-                      {guidance.retryLabel}
-                    </button>
-                    <button
-                      onClick={() => openSettingsTab(failure.platform)}
-                      aria-label={`打开 ${failure.platformLabel} 设置`}
-                      style={{
-                        ...actionButtonStyle,
-                        border: guidance.intent === 'settings' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-light)',
-                        backgroundColor: guidance.intent === 'settings' ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
-                        color: guidance.intent === 'settings' ? 'var(--error)' : 'var(--text-secondary)'
-                      }}
-                    >
-                      {guidance.settingsLabel}
-                    </button>
-                  </div>
+                  </span>
+                  <span style={{
+                    flexShrink: 0,
+                    color: 'var(--text-tertiary)',
+                    fontSize: '12px',
+                    marginLeft: '2px'
+                  }}>
+                    {isExpanded ? '▲' : '▼'}
+                  </span>
+                  <button
+                    onClick={dismiss}
+                    aria-label={`忽略 ${failure.platformLabel}：${failure.title}`}
+                    style={{
+                      flexShrink: 0,
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-tertiary)',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="忽略此条"
+                  >
+                    ×
+                  </button>
                 </div>
+
+                {/* 展开详情 */}
+                {isExpanded && (
+                  <div style={{ padding: '0 10px 10px', borderTop: '1px solid var(--border-light)' }}>
+                    <div style={{ marginTop: '8px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
+                      {failure.error}
+                    </div>
+                    <div style={{ marginTop: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 700 }}>
+                      {guidance.primaryText}
+                    </div>
+                    <div style={{ marginTop: '2px', color: 'var(--text-tertiary)', fontSize: '12px', lineHeight: 1.45 }}>
+                      {guidance.secondaryText}
+                    </div>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => retryFailureAsDraft(failure)}
+                        aria-label={`重试 ${failure.platformLabel}：${failure.title}`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: `1px solid ${accent}66`,
+                          backgroundColor: `${accent}18`,
+                          color: accent
+                        }}
+                      >
+                        {guidance.retryLabel}
+                      </button>
+                      <button
+                        onClick={() => openSettingsTab(failure.platform)}
+                        aria-label={`打开 ${failure.platformLabel} 设置`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: guidance.intent === 'settings' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-light)',
+                          backgroundColor: guidance.intent === 'settings' ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                          color: guidance.intent === 'settings' ? 'var(--error)' : 'var(--text-secondary)'
+                        }}
+                      >
+                        {guidance.settingsLabel}
+                      </button>
+                      <button
+                        onClick={() => resolveFailure(failure)}
+                        aria-label={`标记已解决：${failure.platformLabel} ${failure.title}`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-tertiary)',
+                          marginLeft: 'auto'
+                        }}
+                        title="清除此条失败记录（已在其他地方处理、或为旧版本遗留错误）"
+                      >
+                        标记已解决
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -778,18 +919,7 @@ const MainLayout: React.FC = () => {
                 微信 {wechatSynced}
               </span>
             )}
-            {wpSynced > 0 && (
-              <span style={{ 
-                fontSize: '11px', 
-                padding: '2px 8px', 
-                borderRadius: '10px',
-                backgroundColor: 'rgba(33, 117, 155, 0.15)',
-                color: '#21759B'
-              }}>
-                WP {wpSynced}
-              </span>
-            )}
-            {biliSynced > 0 && (
+            {config.bilibili?.enabled && biliSynced > 0 && (
               <span style={{ 
                 fontSize: '11px', 
                 padding: '2px 8px', 
@@ -798,6 +928,17 @@ const MainLayout: React.FC = () => {
                 color: '#FB7299'
               }}>
                 B站 {biliSynced}
+              </span>
+            )}
+            {config.wordpress?.enabled && wpSynced > 0 && (
+              <span style={{ 
+                fontSize: '11px', 
+                padding: '2px 8px', 
+                borderRadius: '10px',
+                backgroundColor: 'rgba(33, 117, 155, 0.15)',
+                color: '#21759B'
+              }}>
+                WP {wpSynced}
               </span>
             )}
           </div>
@@ -815,12 +956,12 @@ const MainLayout: React.FC = () => {
           }}>
             <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
               {renderReadinessChip(platformReadiness.wechat)}
-              {renderReadinessChip(platformReadiness.wordpress)}
-              {renderReadinessChip(platformReadiness.bilibili)}
+              {config.bilibili?.enabled && renderReadinessChip(platformReadiness.bilibili)}
+              {config.wordpress?.enabled && renderReadinessChip(platformReadiness.wordpress)}
             </div>
             <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--border-light)' }} />
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {(['wechat', 'wordpress', 'bilibili', 'both'] as SyncTarget[]).map(renderSyncAction)}
+              {visibleSyncTargets.map(renderSyncAction)}
             </div>
           </div>
 
@@ -891,7 +1032,7 @@ const MainLayout: React.FC = () => {
         />
       </main>
 
-      {showSyncFailures && syncFailures.length > 0 && renderFailurePanel(syncFailures)}
+      {showSyncFailures && visibleFailures.length > 0 && renderFailurePanel(visibleFailures)}
 
       {/* 底部状态栏 */}
       <footer style={{
@@ -908,7 +1049,7 @@ const MainLayout: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span>状态:</span>
           <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{statusMessage}</span>
-          {syncFailures.length > 0 && (
+          {visibleFailures.length > 0 && (
             <button
               onClick={() => setShowSyncFailures(prev => !prev)}
               style={{
@@ -922,10 +1063,10 @@ const MainLayout: React.FC = () => {
                 fontSize: '12px',
                 fontWeight: 700
               }}
-              aria-label={`查看 ${syncFailures.length} 个同步失败原因`}
+              aria-label={`查看 ${visibleFailures.length} 个同步失败原因`}
               title="查看同步失败原因"
             >
-              查看原因 {syncFailures.length}
+              查看原因 {visibleFailures.length}
             </button>
           )}
         </div>

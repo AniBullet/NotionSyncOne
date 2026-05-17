@@ -143,8 +143,8 @@ const SyncBadges: React.FC<{
   return (
     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
       {getBadge(wechatState, 'wechat')}
-      {getBadge(wpState, 'wordpress')}
       {getBadge(biliState, 'bilibili')}
+      {getBadge(wpState, 'wordpress')}
     </div>
   );
 };

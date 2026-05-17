@@ -1,8 +1,130 @@
 import React, { useState, useEffect } from 'react';
 import { IpcService } from '../../shared/services/IpcService';
 import { Config } from '../../shared/types/config';
+import { BilibiliSeason } from '../../shared/types/bilibili';
 import { APP_VERSION, GITHUB_REPO } from '../../shared/constants';
 import { getSettingsSections, SettingsSectionStatus } from '../utils/settingsStatus';
+
+const BILIBILI_TIDS = [
+  { tid: 138, name: '搞笑',        parent: '生活' },
+  { tid: 239, name: '家居房产',    parent: '生活' },
+  { tid: 161, name: '手工',        parent: '生活' },
+  { tid: 162, name: '绘画',        parent: '生活' },
+  { tid:  21, name: '日常',        parent: '生活' },
+  { tid:  17, name: '单机游戏',    parent: '游戏' },
+  { tid:  65, name: '网络游戏',    parent: '游戏' },
+  { tid: 172, name: '手机游戏',    parent: '游戏' },
+  { tid: 171, name: '电子竞技',    parent: '游戏' },
+  { tid: 173, name: '桌游棋牌',    parent: '游戏' },
+  { tid: 136, name: '音游',        parent: '游戏' },
+  { tid: 121, name: 'GMV',         parent: '游戏' },
+  { tid:  19, name: 'Mugen',       parent: '游戏' },
+  { tid:  71, name: '综艺',        parent: '娱乐' },
+  { tid: 137, name: '明星',        parent: '娱乐' },
+  { tid: 201, name: '科学科普',    parent: '知识' },
+  { tid: 124, name: '社科·法律·心理', parent: '知识' },
+  { tid: 228, name: '人文历史',    parent: '知识' },
+  { tid: 207, name: '财经商业',    parent: '知识' },
+  { tid: 208, name: '校园学习',    parent: '知识' },
+  { tid: 209, name: '职业职场',    parent: '知识' },
+  { tid: 229, name: '设计·创意',  parent: '知识' },
+  { tid: 122, name: '野生技能协会', parent: '知识' },
+  { tid:  85, name: '短片',        parent: '影视' },
+  { tid: 182, name: '影视杂谈',    parent: '影视' },
+  { tid: 183, name: '影视剪辑',    parent: '影视' },
+  { tid: 184, name: '预告·资讯',  parent: '影视' },
+  { tid: 130, name: '音乐综合',    parent: '音乐' },
+  { tid:  29, name: '音乐现场',    parent: '音乐' },
+  { tid:  59, name: '演奏',        parent: '音乐' },
+  { tid:  31, name: '翻唱',        parent: '音乐' },
+  { tid: 193, name: 'MV',          parent: '音乐' },
+  { tid:  30, name: 'VOCALOID·UTAU', parent: '音乐' },
+  { tid: 194, name: '电音',        parent: '音乐' },
+  { tid:  28, name: '原创音乐',    parent: '音乐' },
+  { tid:  24, name: 'MAD·AMV',    parent: '动画' },
+  { tid:  25, name: 'MMD·3D',      parent: '动画' },
+  { tid:  27, name: '综合',        parent: '动画' },
+  { tid:  47, name: '短片·手书·配音', parent: '动画' },
+  { tid: 210, name: '手办·模玩',  parent: '动画' },
+  { tid:  86, name: '特摄',        parent: '动画' },
+  { tid: 157, name: '美妆护肤',    parent: '时尚' },
+  { tid: 158, name: '穿搭',        parent: '时尚' },
+  { tid: 159, name: '时尚潮流',    parent: '时尚' },
+  { tid:  76, name: '美食制作',    parent: '美食' },
+  { tid: 212, name: '美食侦探',    parent: '美食' },
+  { tid: 213, name: '美食测评',    parent: '美食' },
+  { tid: 214, name: '田园美食',    parent: '美食' },
+  { tid: 215, name: '美食记录',    parent: '美食' },
+  { tid: 176, name: '汽车生活',    parent: '汽车' },
+  { tid: 224, name: '汽车文化',    parent: '汽车' },
+  { tid: 225, name: '汽车极客',    parent: '汽车' },
+  { tid: 240, name: '摩托车',      parent: '汽车' },
+  { tid: 226, name: '智能出行',    parent: '汽车' },
+  { tid: 227, name: '购车攻略',    parent: '汽车' },
+  { tid: 235, name: '篮球·足球',  parent: '运动' },
+  { tid: 164, name: '健身',        parent: '运动' },
+  { tid: 236, name: '竞技体育',    parent: '运动' },
+  { tid: 237, name: '运动文化',    parent: '运动' },
+  { tid: 238, name: '运动综合',    parent: '运动' },
+  { tid:  95, name: '数码',        parent: '科技' },
+  { tid: 230, name: '软件应用',    parent: '科技' },
+  { tid: 231, name: '计算机技术',  parent: '科技' },
+  { tid: 232, name: '工业·工程·机械', parent: '科技' },
+  { tid: 233, name: '极客DIY',     parent: '科技' },
+  { tid: 218, name: '喵星人',      parent: '动物圈' },
+  { tid: 219, name: '汪星人',      parent: '动物圈' },
+  { tid: 221, name: '野生动物',    parent: '动物圈' },
+  { tid: 222, name: '爬宠',        parent: '动物圈' },
+  { tid: 220, name: '大熊猫',      parent: '动物圈' },
+  { tid:  75, name: '动物综合',    parent: '动物圈' },
+  { tid:  20, name: '宅舞',        parent: '舞蹈' },
+  { tid: 154, name: '舞蹈综合',    parent: '舞蹈' },
+  { tid: 156, name: '舞蹈教程',    parent: '舞蹈' },
+  { tid: 198, name: '街舞',        parent: '舞蹈' },
+  { tid: 199, name: '明星舞蹈',    parent: '舞蹈' },
+  { tid: 200, name: '中国舞',      parent: '舞蹈' },
+  { tid: 153, name: '国产动画',    parent: '国创' },
+  { tid: 168, name: '国产原创相关', parent: '国创' },
+  { tid: 169, name: '布袋戏',      parent: '国创' },
+  { tid: 170, name: '资讯',        parent: '国创' },
+  { tid: 195, name: '动态漫·广播剧', parent: '国创' },
+  { tid:  22, name: '鬼畜调教',    parent: '鬼畜' },
+  { tid:  26, name: '音MAD',       parent: '鬼畜' },
+  { tid: 126, name: '人力VOCALOID', parent: '鬼畜' },
+  { tid: 216, name: '鬼畜剧场',    parent: '鬼畜' },
+  { tid: 127, name: '教程演示',    parent: '鬼畜' },
+  { tid:  37, name: '人文·历史',  parent: '纪录片' },
+  { tid: 178, name: '科学·探索·自然', parent: '纪录片' },
+  { tid: 179, name: '军事',        parent: '纪录片' },
+  { tid: 180, name: '社会·美食·旅行', parent: '纪录片' },
+  { tid:  51, name: '资讯',        parent: '番剧' },
+  { tid: 152, name: '官方延伸',    parent: '番剧' },
+  { tid:  32, name: '完结动画',    parent: '番剧' },
+  { tid:  33, name: '连载动画',    parent: '番剧' },
+  { tid: 185, name: '国产剧',      parent: '电视剧' },
+  { tid: 187, name: '海外剧',      parent: '电视剧' },
+  { tid:  83, name: '其他国家',    parent: '电影' },
+  { tid: 145, name: '欧美电影',    parent: '电影' },
+  { tid: 146, name: '日本电影',    parent: '电影' },
+  { tid: 147, name: '国产电影',    parent: '电影' },
+] as const;
+
+type BilibiliTidEntry = (typeof BILIBILI_TIDS)[number];
+
+const tidDisplayName = (tid: number): string => {
+  const found = (BILIBILI_TIDS as readonly BilibiliTidEntry[]).find(t => t.tid === tid);
+  return found ? `${found.parent} / ${found.name}` : `tid: ${tid}`;
+};
+
+const notionFieldMapFields = [
+  { key: 'linkStart', label: '原文链接', defaultName: 'LinkStart' },
+  { key: 'from', label: '来源平台', defaultName: 'From' },
+  { key: 'author', label: '原作者', defaultName: 'Author' },
+  { key: 'featureTag', label: '标签', defaultName: 'FeatureTag' },
+  { key: 'expectationsRate', label: '个人期待值', defaultName: 'ExpectationsRate' },
+  { key: 'engine', label: '引擎', defaultName: 'Engine' },
+  { key: 'addedTime', label: '添加时间', defaultName: 'AddedTime' }
+] as const;
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -14,7 +136,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const [config, setConfig] = useState<Config>({
     notion: { apiKey: '', databaseId: '' },
     wechat: { appId: '', appSecret: '' },
-    wordpress: { siteUrl: '', username: '', appPassword: '' },
+    wordpress: { enabled: false, siteUrl: '', username: '', appPassword: '' },
     bilibili: { enabled: false }
   });
   const [loading, setLoading] = useState(false);
@@ -23,6 +145,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const [testing, setTesting] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ checking: boolean; latest?: string; hasUpdate?: boolean }>({ checking: false });
   const [bilibiliUser, setBilibiliUser] = useState<{ name: string; mid: string; verifiedByCookie?: boolean } | null>(null);
+  const [seasons, setSeasons] = useState<BilibiliSeason[]>([]);
+  const [fetchingSeasons, setFetchingSeasons] = useState(false);
+  const [seasonsError, setSeasonsError] = useState<string | null>(null);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  const [tidSearch, setTidSearch] = useState('');
+  const [tidDropdownOpen, setTidDropdownOpen] = useState(false);
   const sectionStatus = getSettingsSections(config);
 
   useEffect(() => {
@@ -42,6 +170,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     }
   }, [activeTab]);
 
+  // 切到 B站 tab 且已启用时自动拉合集列表（用于显示已配置分组的名称）
+  useEffect(() => {
+    if (activeTab === 'bilibili' && config.bilibili?.enabled) {
+      fetchSeasons().catch(() => {/* 静默失败 */});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, config.bilibili?.enabled]);
+
   const loadBilibiliUser = async () => {
     try {
       const userInfo = await window.electron.ipcRenderer.invoke('get-bilibili-user');
@@ -52,13 +188,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     }
   };
 
+  const fetchSeasons = async () => {
+    setFetchingSeasons(true);
+    setSeasonsError(null);
+    setSeasons([]);
+    setSelectedSeasonId(null);
+    try {
+      const list = await IpcService.getBilibiliSeasons();
+      setSeasons(list);
+      // 如果已配置了 defaultSeasonId，自动定位到对应合集
+      const currentSectionId = config.bilibili?.defaultSeasonId;
+      if (currentSectionId) {
+        const matched = list.find(s => s.sections.some(sec => sec.sectionId === currentSectionId));
+        if (matched) setSelectedSeasonId(matched.seasonId);
+      }
+    } catch (err) {
+      setSeasonsError(err instanceof Error ? err.message : '获取合集失败');
+    } finally {
+      setFetchingSeasons(false);
+    }
+  };
+
   const loadConfig = async () => {
     try {
       const loadedConfig = await IpcService.getConfig();
       setConfig({
         notion: {
           apiKey: loadedConfig.notion?.apiKey || '',
-          databaseId: loadedConfig.notion?.databaseId || ''
+          databaseId: loadedConfig.notion?.databaseId || '',
+          fieldMap: loadedConfig.notion?.fieldMap
         },
         wechat: {
           appId: loadedConfig.wechat?.appId || '',
@@ -68,6 +226,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           titleTemplate: loadedConfig.wechat?.titleTemplate || ''
         },
         wordpress: {
+          enabled: loadedConfig.wordpress?.enabled || false,
           siteUrl: loadedConfig.wordpress?.siteUrl || '',
           username: loadedConfig.wordpress?.username || '',
           appPassword: loadedConfig.wordpress?.appPassword || '',
@@ -81,6 +240,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           cookieFile: loadedConfig.bilibili?.cookieFile || '',
           defaultTid: loadedConfig.bilibili?.defaultTid ?? undefined,
           defaultTags: loadedConfig.bilibili?.defaultTags || [],
+          defaultSeasonId: loadedConfig.bilibili?.defaultSeasonId ?? undefined,
           descTemplate: loadedConfig.bilibili?.descTemplate || '',
           titleTemplate: loadedConfig.bilibili?.titleTemplate || '',
           copyright: loadedConfig.bilibili?.copyright ?? 1,
@@ -104,7 +264,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
       const configToSave: Config = {
         notion: {
           apiKey: config.notion.apiKey.trim(),
-          databaseId: config.notion.databaseId.trim()
+          databaseId: config.notion.databaseId.trim(),
+          fieldMap: config.notion.fieldMap && Object.keys(config.notion.fieldMap).length > 0 ? config.notion.fieldMap : undefined
         },
         wechat: {
           appId: (config.wechat?.appId || '').trim(),
@@ -113,7 +274,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           topNotice: (config.wechat?.topNotice || '').trim() || undefined,
           titleTemplate: (config.wechat?.titleTemplate || '').trim() || undefined
         },
-        wordpress: (config.wordpress?.siteUrl || config.wordpress?.topNotice) ? {
+        wordpress: config.wordpress ? {
+          enabled: config.wordpress.enabled || false,
           siteUrl: (config.wordpress?.siteUrl || '').trim(),
           username: (config.wordpress?.username || '').trim(),
           appPassword: (config.wordpress?.appPassword || '').trim(),
@@ -127,6 +289,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
           cookieFile: config.bilibili.cookieFile?.trim() || undefined,
           defaultTid: config.bilibili.defaultTid != null ? Number(config.bilibili.defaultTid) : undefined,
           defaultTags: config.bilibili.defaultTags?.length ? config.bilibili.defaultTags.filter(t => t.trim()).map(t => t.trim()) : undefined,
+          defaultSeasonId: config.bilibili.defaultSeasonId != null ? Number(config.bilibili.defaultSeasonId) : undefined,
           descTemplate: config.bilibili.descTemplate?.trim(),
           titleTemplate: config.bilibili.titleTemplate?.trim() || undefined,
           copyright: config.bilibili.copyright != null ? Number(config.bilibili.copyright) as 1 | 2 : undefined,
@@ -158,8 +321,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
         if (field === 'defaultTags') {
           return { ...prev, bilibili: { ...prev.bilibili, defaultTags: value.split(',').map(t => t.trim()).filter(Boolean) } };
         }
-        if (field === 'defaultTid') {
-          return { ...prev, bilibili: { ...prev.bilibili, defaultTid: value !== '' ? Number(value) : undefined } };
+        if (field === 'defaultTid' || field === 'defaultSeasonId') {
+          return { ...prev, bilibili: { ...prev.bilibili, [field]: value !== '' ? Number(value) : undefined } };
         }
         if (field === 'copyright' || field === 'noReprint' || field === 'openElec') {
           return { ...prev, bilibili: { ...prev.bilibili, [field]: Number(value) } };
@@ -171,7 +334,38 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
         console.log(`[handleChange] bilibili.${field} = `, value);
         return { ...prev, bilibili: { ...prev.bilibili, [field]: value } };
       }
+      if (section === 'wordpress' && field === 'enabled') {
+        return {
+          ...prev,
+          wordpress: {
+            siteUrl: '',
+            username: '',
+            appPassword: '',
+            ...prev.wordpress,
+            enabled: value === 'true'
+          }
+        };
+      }
       return { ...prev, [section]: { ...(prev[section] || {}), [field]: value } };
+    });
+  };
+
+  const handleNotionFieldMapChange = (key: typeof notionFieldMapFields[number]['key'], value: string) => {
+    setConfig(prev => {
+      const nextFieldMap = { ...(prev.notion.fieldMap || {}) };
+      const cleanValue = value.trim();
+      if (cleanValue) {
+        nextFieldMap[key] = cleanValue;
+      } else {
+        delete nextFieldMap[key];
+      }
+      return {
+        ...prev,
+        notion: {
+          ...prev.notion,
+          fieldMap: Object.keys(nextFieldMap).length > 0 ? nextFieldMap : undefined
+        }
+      };
     });
   };
 
@@ -256,8 +450,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
   const tabs = [
     { id: 'notion' as const, label: 'Notion' },
     { id: 'wechat' as const, label: '微信' },
-    { id: 'wordpress' as const, label: 'WP' },
     { id: 'bilibili' as const, label: 'B站' },
+    { id: 'wordpress' as const, label: 'WP' },
     { id: 'about' as const, label: '关于' },
   ];
 
@@ -349,6 +543,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
     );
   };
 
+  const renderSectionHeaderAction = () => {
+    if (activeTab === 'wechat') {
+      return (
+        <button onClick={testWechat} disabled={testing === 'wechat'} style={{ ...testBtnStyle, marginTop: 0, opacity: testing === 'wechat' ? 0.6 : 1 }}>
+          {testing === 'wechat' ? '测试中...' : '测试连接'}
+        </button>
+      );
+    }
+    if (activeTab === 'wordpress') {
+      return (
+        <button onClick={testWordPress} disabled={testing === 'wordpress'} style={{ ...testBtnStyle, marginTop: 0, opacity: testing === 'wordpress' ? 0.6 : 1 }}>
+          {testing === 'wordpress' ? '测试中...' : '测试连接'}
+        </button>
+      );
+    }
+    if (activeTab === 'bilibili') {
+      return (
+        <button onClick={loadBilibiliUser} disabled={testing === 'bili-login' || testing === 'bili-logout'} style={{ ...testBtnStyle, marginTop: 0 }}>
+          刷新账号
+        </button>
+      );
+    }
+    return null;
+  };
+
   const activeSection = activeTab !== 'about' ? sectionStatus[activeTab] : null;
   const contentColumnStyle: React.CSSProperties = {
     maxWidth: activeTab === 'about' ? '680px' : '620px',
@@ -393,7 +612,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '210px minmax(0, 1fr)',
+          gridTemplateColumns: '168px minmax(0, 1fr)',
           minHeight: 0
         }}>
           <aside
@@ -444,6 +663,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                   补齐后保存即可更新状态
                 </span>
               )}
+              {renderSectionHeaderAction()}
             </div>
           )}
           {activeTab === 'notion' && (
@@ -456,6 +676,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 <label style={labelStyle}>数据库 ID</label>
                 <input type="text" value={config.notion.databaseId} onChange={e => handleChange('notion', 'databaseId', e.target.value)} placeholder="32位数据库ID" style={inputStyle} />
                 <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>从 Notion 数据库链接中获取</p>
+              </div>
+              <div>
+                <label style={labelStyle}>可选元数据字段映射</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {notionFieldMapFields.map(field => (
+                    <div key={field.key}>
+                      <label style={{ ...labelStyle, fontSize: '11px', color: 'var(--text-tertiary)' }}>{field.label}</label>
+                      <input
+                        type="text"
+                        value={config.notion.fieldMap?.[field.key] || ''}
+                        onChange={e => handleNotionFieldMapChange(field.key, e.target.value)}
+                        placeholder={field.defaultName}
+                        style={inputStyle}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '6px' }}>这些字段可以不存在；留空会按默认字段名读取，读不到就跳过</p>
               </div>
             </div>
           )}
@@ -485,14 +723,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 <input type="text" value={config.wechat.titleTemplate || ''} onChange={e => handleChange('wechat', 'titleTemplate', e.target.value)} placeholder="例如：【转载】{title}" style={inputStyle} />
                 <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>使用 {'{title}'} 代表原标题</p>
               </div>
-              <button onClick={testWechat} disabled={testing === 'wechat'} style={{ ...testBtnStyle, opacity: testing === 'wechat' ? 0.6 : 1, alignSelf: 'flex-start' }}>
-                {testing === 'wechat' ? '测试中...' : '🔗 测试连接'}
-              </button>
             </div>
           )}
 
           {activeTab === 'wordpress' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={config.wordpress?.enabled || false}
+                    onChange={e => handleChange('wordpress', 'enabled', e.target.checked.toString())}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  启用 WordPress 同步
+                </label>
+              </div>
               <div>
                 <label style={labelStyle}>站点 URL</label>
                 <input type="text" value={config.wordpress?.siteUrl || ''} onChange={e => handleChange('wordpress', 'siteUrl', e.target.value)} placeholder="https://your-site.com" style={inputStyle} />
@@ -530,9 +776,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 分类/作者 ID 可在 WordPress 后台相应页面 URL 中查看（如 category&tag_ID=<strong>5</strong>）<br/>
                 应用密码在 用户 → 个人资料 中生成
               </p>
-              <button onClick={testWordPress} disabled={testing === 'wordpress'} style={{ ...testBtnStyle, opacity: testing === 'wordpress' ? 0.6 : 1, alignSelf: 'flex-start' }}>
-                {testing === 'wordpress' ? '测试中...' : '🔗 测试连接'}
-              </button>
             </div>
           )}
 
@@ -644,15 +887,157 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                   </div>
 
                   {/* 可选配置 */}
-                  <div>
+                  <div style={{ position: 'relative' }}>
                     <label style={labelStyle}>默认分区（可选）</label>
                     <input
-                      type="number"
-                      value={config.bilibili?.defaultTid || ''}
-                      onChange={e => handleChange('bilibili', 'defaultTid', e.target.value)}
-                      placeholder="122-技术 / 21-生活 / 230-软件"
+                      value={tidDropdownOpen ? tidSearch : (config.bilibili?.defaultTid ? tidDisplayName(config.bilibili.defaultTid) : '')}
+                      onChange={e => { setTidSearch(e.target.value); setTidDropdownOpen(true); }}
+                      onFocus={() => { setTidSearch(''); setTidDropdownOpen(true); }}
+                      onBlur={() => setTimeout(() => setTidDropdownOpen(false), 150)}
+                      placeholder="搜索分区，如：科技 / 计算机"
                       style={inputStyle}
+                      autoComplete="off"
                     />
+                    {tidDropdownOpen && (() => {
+                      const q = tidSearch.toLowerCase();
+                      const filtered = (BILIBILI_TIDS as readonly BilibiliTidEntry[]).filter(
+                        t => !q || t.parent.includes(tidSearch) || t.name.includes(tidSearch) || String(t.tid).includes(q)
+                      );
+                      return filtered.length > 0 ? (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          maxHeight: '220px',
+                          overflow: 'auto',
+                          backgroundColor: 'var(--bg-primary)',
+                          border: '1px solid var(--border-light)',
+                          borderRadius: '6px',
+                          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                          zIndex: 200
+                        }}>
+                          {filtered.map(t => (
+                            <div
+                              key={t.tid}
+                              onMouseDown={() => {
+                                handleChange('bilibili', 'defaultTid', String(t.tid));
+                                setTidSearch('');
+                                setTidDropdownOpen(false);
+                              }}
+                              style={{
+                                padding: '7px 12px',
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px solid var(--border-light)'
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-secondary)')}
+                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <span>
+                                <span style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>{t.parent} / </span>
+                                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{t.name}</span>
+                              </span>
+                              <span style={{ color: 'var(--text-tertiary)', fontSize: '11px', flexShrink: 0 }}>tid: {t.tid}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <label style={{ ...labelStyle, marginBottom: 0 }}>固定合集分组（可选）</label>
+                      <button
+                        onClick={fetchSeasons}
+                        disabled={fetchingSeasons}
+                        style={{
+                          height: '26px',
+                          padding: '0 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)',
+                          cursor: fetchingSeasons ? 'default' : 'pointer',
+                          fontSize: '12px',
+                          opacity: fetchingSeasons ? 0.6 : 1
+                        }}
+                      >
+                        {fetchingSeasons ? '获取中...' : '获取合集列表'}
+                      </button>
+                    </div>
+
+                    {/* 未拉取时显示当前已配置值 */}
+                    {seasons.length === 0 && !fetchingSeasons && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="number"
+                          value={config.bilibili?.defaultSeasonId || ''}
+                          onChange={e => handleChange('bilibili', 'defaultSeasonId', e.target.value)}
+                          placeholder="点击右上角按钮获取，或手动填 section_id"
+                          style={{ ...inputStyle, flex: 1 }}
+                        />
+                      </div>
+                    )}
+
+                    {seasonsError && (
+                      <p style={{ fontSize: '12px', color: 'var(--error)', marginTop: '4px' }}>{seasonsError}</p>
+                    )}
+
+                    {/* 拉取成功后显示两级选择 */}
+                    {seasons.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <select
+                          value={selectedSeasonId ?? ''}
+                          onChange={e => {
+                            const sid = Number(e.target.value);
+                            setSelectedSeasonId(sid || null);
+                            // 切换合集时自动选第一个分组
+                            const season = seasons.find(s => s.seasonId === sid);
+                            const firstSection = season?.sections[0];
+                            if (firstSection) {
+                              handleChange('bilibili', 'defaultSeasonId', String(firstSection.sectionId));
+                            }
+                          }}
+                          style={inputStyle}
+                        >
+                          <option value="">— 选择合集 —</option>
+                          {seasons.map(s => (
+                            <option key={s.seasonId} value={s.seasonId}>{s.seasonName}</option>
+                          ))}
+                        </select>
+
+                        {selectedSeasonId != null && (() => {
+                          const secs = seasons.find(s => s.seasonId === selectedSeasonId)?.sections ?? [];
+                          return secs.length > 1 ? (
+                            <select
+                              value={config.bilibili?.defaultSeasonId ?? ''}
+                              onChange={e => handleChange('bilibili', 'defaultSeasonId', e.target.value)}
+                              style={inputStyle}
+                            >
+                              <option value="">— 选择分组 —</option>
+                              {secs.map(sec => (
+                                <option key={sec.sectionId} value={sec.sectionId}>
+                                  {sec.sectionName}（section_id: {sec.sectionId}）
+                                </option>
+                              ))}
+                            </select>
+                          ) : null;
+                        })()}
+
+                        {config.bilibili?.defaultSeasonId && (
+                          <p style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                            已选 section_id: {config.bilibili.defaultSeasonId}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }}>留空则只投稿，不自动加入合集分组</p>
                   </div>
 
                   <div>
@@ -678,26 +1063,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                     <p style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>使用 {'{title}'} 代表原标题</p>
                   </div>
 
-                  <div>
-                    <label style={labelStyle}>简介模板（可选）</label>
-                    <textarea
-                      value={config.bilibili?.descTemplate || ''}
-                      onChange={e => handleChange('bilibili', 'descTemplate', e.target.value)}
-                      placeholder="支持变量：{title} {url} {date} {from} {author} {engine} {rate} {tags}&#10;&#10;推荐格式示例：&#10;━━━━━━━━━━━━━━━&#10;📌 来源：{from}&#10;✍️ 作者：{author}&#10;🎮 引擎：{engine}&#10;⭐ 评分：{rate}&#10;🏷️ 标签：{tags}&#10;━━━━━━━━━━━━━━━&#10;🔗 原文：{url}&#10;📅 日期：{date}"
-                      style={{ ...inputStyle, minHeight: '140px', resize: 'vertical' }}
-                    />
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                      💡 支持8个变量 | 避免使用 ---- 分隔线（建议用 ━ 或 emoji）
-                    </div>
-                  </div>
-
                   {/* 高级选项 */}
-                  <details style={{ marginTop: '8px' }}>
-                    <summary style={{ cursor: 'pointer', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                      ⚙️ 高级选项
-                    </summary>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div>
                         <label style={labelStyle}>版权类型</label>
                         <select
@@ -763,12 +1130,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                           关闭弹幕
                         </label>
                       </div>
-                    </div>
-                  </details>
+                  </div>
 
                   {/* 简洁的说明链接 */}
                   <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                    💡 需先安装 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>biliup</code> 和 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>ffmpeg</code>
+                    需先安装 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>biliup</code> 和 <code style={{ padding: '1px 4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px' }}>ffmpeg</code>
                     （安装后请重启应用），
                     <a
                       href="#"
@@ -777,6 +1143,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                     >
                       查看详细说明
                     </a>
+                  </div>
+
+                  <div>
+                    <label style={labelStyle}>简介模板（可选）</label>
+                    <textarea
+                      value={config.bilibili?.descTemplate || ''}
+                      onChange={e => handleChange('bilibili', 'descTemplate', e.target.value)}
+                      placeholder="支持变量：{title} {url} {date} {from} {author} {engine} {rate} {tags}&#10;&#10;推荐格式示例：&#10;━━━━━━━━━━━━━━━&#10;来源平台：{from}&#10;原作者：{author}&#10;引擎：{engine}&#10;个人期待值：{rate}&#10;标签：{tags}&#10;━━━━━━━━━━━━━━━&#10;原文：{url}&#10;日期：{date}"
+                      style={{ ...inputStyle, minHeight: '180px', resize: 'vertical' }}
+                    />
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                      支持8个变量；建议用 ━ 这类分隔线
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                      {['{title}', '{url}', '{date}', '{from}', '{author}', '{engine}', '{rate}', '{tags}'].map(token => (
+                        <code key={token} style={{ padding: '3px 6px', borderRadius: '6px', backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', fontSize: '11px' }}>
+                          {token}
+                        </code>
+                      ))}
+                    </div>
                   </div>
                 </>
               )}
@@ -800,7 +1186,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '12px', color: updateInfo.hasUpdate ? '#10B981' : 'var(--text-secondary)' }}>
-                    {updateInfo.hasUpdate ? `🎉 新版本 v${updateInfo.latest}` : updateInfo.latest ? '✓ 已是最新版本' : '点击检查更新'}
+                    {updateInfo.hasUpdate ? `新版本 v${updateInfo.latest}` : updateInfo.latest ? '已是最新版本' : '点击检查更新'}
                   </span>
                   <button
                     onClick={() => updateInfo.hasUpdate ? window.electron.openExternal(`${GITHUB_REPO}/releases`) : checkUpdate()}
@@ -813,37 +1199,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                 {/* 状态提示 */}
                 {message && (
                   <div style={{ marginTop: '8px', fontSize: '11px', color: message.type === 'success' ? '#6EE7B7' : '#FCA5A5' }}>
-                    {message.type === 'success' ? '✓' : '✗'} {message.text}
+                    {message.text}
                   </div>
                 )}
               </div>
 
               {/* 链接 */}
               <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-                <a style={linkStyle} onClick={() => window.electron.openExternal(GITHUB_REPO)}>📦 GitHub</a>
-                <a style={linkStyle} onClick={() => window.electron.openExternal(`${GITHUB_REPO}/issues`)}>🐛 反馈问题</a>
-                <a style={linkStyle} onClick={() => window.electron.openExternal(`${GITHUB_REPO}/releases`)}>📋 更新日志</a>
+                <a style={linkStyle} onClick={() => window.electron.openExternal(GITHUB_REPO)}>GitHub</a>
+                <a style={linkStyle} onClick={() => window.electron.openExternal(`${GITHUB_REPO}/issues`)}>反馈问题</a>
+                <a style={linkStyle} onClick={() => window.electron.openExternal(`${GITHUB_REPO}/releases`)}>更新日志</a>
               </div>
 
               {/* 安全与隐私 */}
               <div style={{ backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', padding: '14px 16px' }}>
-                <h4 style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>🔐 安全与隐私</h4>
+                <h4 style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>安全与隐私</h4>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                    <span style={{ color: '#22C55E', minWidth: '14px' }}>✓</span>
+                    <span style={{ color: '#22C55E', minWidth: '14px' }}></span>
                     <span>系统级加密：敏感配置使用 DPAPI 加密，只有当前用户在当前电脑上才能解密</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                    <span style={{ color: '#22C55E', minWidth: '14px' }}>✓</span>
+                    <span style={{ color: '#22C55E', minWidth: '14px' }}></span>
                     <span>本地存储：所有数据仅存储在本地，不上传到云端</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                    <span style={{ color: '#22C55E', minWidth: '14px' }}>✓</span>
+                    <span style={{ color: '#22C55E', minWidth: '14px' }}></span>
                     <span>开源透明：源代码公开可审计，无后门和追踪</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginTop: '4px' }}>
-                    <span style={{ color: '#F59E0B', minWidth: '14px' }}>⚠</span>
+                    <span style={{ color: '#F59E0B', minWidth: '14px' }}></span>
                     <span>不要在公共电脑使用，不要分享配置文件</span>
                   </div>
                 </div>
@@ -853,14 +1239,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, defaultT
                     style={{ ...linkStyle, fontSize: '11px' }} 
                     onClick={() => window.electron.openExternal(`${GITHUB_REPO}/blob/main/docs/SECURITY.md`)}
                   >
-                    📄 查看完整安全说明
+                    查看完整安全说明
                   </a>
                 </div>
               </div>
 
               {/* 作者 */}
               <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-tertiary)', margin: 0 }}>
-                Made with ❤️ by Bullet.S
+                Made by Bullet.S
               </p>
             </div>
           )}

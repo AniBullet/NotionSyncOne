@@ -26,6 +26,22 @@ test('article sync badges render status dots instead of text abbreviations', () 
   assert.doesNotMatch(articleGrid, /getBadge\(biliState,\s*'B'/);
 });
 
+test('workbench orders Bilibili before WordPress everywhere', () => {
+  assert.ok(mainLayout.indexOf('biliSynced > 0') < mainLayout.indexOf('wpSynced > 0'));
+  assert.match(
+    mainLayout,
+    /renderReadinessChip\(platformReadiness\.wechat\)[\s\S]*renderReadinessChip\(platformReadiness\.bilibili\)[\s\S]*renderReadinessChip\(platformReadiness\.wordpress\)/
+  );
+  assert.match(mainLayout, /visibleSyncTargets\.map\(renderSyncAction\)/);
+});
+
+test('workbench hides optional sync channels when they are disabled', () => {
+  assert.match(mainLayout, /enabledSyncTargets/);
+  assert.match(mainLayout, /config\.bilibili\?\.enabled/);
+  assert.match(mainLayout, /config\.wordpress\?\.enabled/);
+  assert.doesNotMatch(mainLayout, /\(\['wechat', 'bilibili', 'wordpress', 'both'\] as SyncTarget\[\]\)\.map\(renderSyncAction\)/);
+});
+
 test('failure panel offers next steps instead of reason only', () => {
   assert.match(mainLayout, /getSyncFailureGuidance/);
   assert.match(mainLayout, /打开设置/);

@@ -11,7 +11,7 @@ const {
 const baseConfig = {
   notion: { apiKey: 'notion-key', databaseId: 'database-id' },
   wechat: { appId: 'wx-app', appSecret: 'wx-secret' },
-  wordpress: { siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' },
+  wordpress: { enabled: true, siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' },
   bilibili: { enabled: true }
 };
 
@@ -37,10 +37,22 @@ test('settings status text distinguishes optional disabled platforms', () => {
   assert.equal(getSectionStatusText(sections.bilibili), '未启用');
 });
 
-test('wordpress section reports all required missing fields', () => {
+test('wordpress section treats disabled platform as not enabled', () => {
   const sections = getSettingsSections({
     ...baseConfig,
-    wordpress: { siteUrl: '', username: '', appPassword: '' }
+    wordpress: { enabled: false, siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' }
+  });
+
+  assert.equal(sections.wordpress.ready, false);
+  assert.equal(sections.wordpress.optional, true);
+  assert.deepEqual(sections.wordpress.missingFields, ['未启用']);
+  assert.equal(sections.wordpress.summary, '未启用');
+});
+
+test('enabled wordpress section reports all required missing fields', () => {
+  const sections = getSettingsSections({
+    ...baseConfig,
+    wordpress: { enabled: true, siteUrl: '', username: '', appPassword: '' }
   });
 
   assert.equal(sections.wordpress.ready, false);
@@ -53,6 +65,6 @@ test('ready sections show usable status text', () => {
 
   assert.equal(getSectionStatusText(sections.notion), '已配置');
   assert.equal(getSectionStatusText(sections.wechat), '可同步');
-  assert.equal(getSectionStatusText(sections.wordpress), '可同步');
   assert.equal(getSectionStatusText(sections.bilibili), '可同步');
+  assert.equal(getSectionStatusText(sections.wordpress), '可同步');
 });

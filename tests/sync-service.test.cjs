@@ -241,3 +241,13 @@ test('SyncService renders FeatureTag metadata for select and multi_select values
   assert.doesNotMatch(selectHtml, /<AI>/);
   assert.match(multiSelectHtml, /Notion, Sync/);
 });
+
+test('SyncService article metadata labels use source platform, original author, and expectation value', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'services', 'SyncService.ts'), 'utf8');
+  assert.match(source, /来源平台/);
+  assert.match(source, /原作者/);
+  assert.match(source, /个人期待值/);
+  assert.doesNotMatch(source, /<strong>来源<\/strong>/);
+  assert.doesNotMatch(source, /<strong>作者<\/strong>/);
+  assert.doesNotMatch(source, />个人期望</);
+});

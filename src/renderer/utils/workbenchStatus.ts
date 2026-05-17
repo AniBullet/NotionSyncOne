@@ -32,16 +32,17 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
     compact(config.wechat?.appSecret) ? '' : 'AppSecret'
   ].filter(Boolean);
 
-  const wordpressMissing = [
+  const wordpressMissing = config.wordpress?.enabled ? [
     compact(config.wordpress?.siteUrl) ? '' : '站点 URL',
     compact(config.wordpress?.username) ? '' : '用户名',
     compact(config.wordpress?.appPassword) ? '' : '应用密码'
-  ].filter(Boolean);
+  ].filter(Boolean) : ['未启用'];
 
   const bilibiliMissing = config.bilibili?.enabled ? [] : ['未启用'];
   const bothMissing = [
     ...wechatMissing.map(field => `微信 ${field}`),
-    ...wordpressMissing.map(field => `WordPress ${field}`)
+    ...(config.bilibili?.enabled ? bilibiliMissing.map(field => `B站 ${field}`) : []),
+    ...(config.wordpress?.enabled ? wordpressMissing.map(field => `WordPress ${field}`) : [])
   ];
 
   return {
@@ -61,7 +62,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
       shortLabel: 'WP',
       configured: wordpressMissing.length === 0,
       missingFields: wordpressMissing,
-      summary: summaryFor(wordpressMissing),
+      summary: config.wordpress?.enabled ? summaryFor(wordpressMissing) : '未启用',
       settingsTab: 'wordpress',
       accentColor: PLATFORM_COLORS.wordpress
     },
@@ -78,7 +79,7 @@ export const getPlatformReadiness = (config: Config): WorkbenchReadiness => {
     both: {
       key: 'both',
       label: '全部平台',
-      shortLabel: '全平台',
+      shortLabel: '全部',
       configured: bothMissing.length === 0,
       missingFields: bothMissing,
       summary: summaryFor(bothMissing),
@@ -115,7 +116,7 @@ export const getSyncTargetDisplay = (
     wechat: { compactLabel: '微信', ariaLabel: '同步到微信' },
     wordpress: { compactLabel: 'WP', ariaLabel: '同步到 WordPress' },
     bilibili: { compactLabel: 'B站', ariaLabel: '同步到 B站' },
-    both: { compactLabel: '全部', ariaLabel: '同步到微信和 WordPress' }
+    both: { compactLabel: '全部', ariaLabel: '同步到已启用平台' }
   } satisfies Record<SyncTarget, { compactLabel: string; ariaLabel: string }>;
 
   return display[target];

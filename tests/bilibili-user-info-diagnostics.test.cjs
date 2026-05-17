@@ -5,7 +5,8 @@ require('ts-node/register/transpile-only');
 
 const {
   describeBilibiliApiFailure,
-  getBilibiliFallbackUserInfo
+  getBilibiliFallbackUserInfo,
+  getBilibiliUserInfoApiEndpoints
 } = require('../src/main/services/BilibiliService.ts');
 
 test('bilibili user info diagnostics include http status and api message', () => {
@@ -40,4 +41,9 @@ test('bilibili fallback user info treats cookie uid as logged in', () => {
     mid: '2031113',
     verifiedByCookie: true
   });
+});
+
+test('bilibili nickname lookup avoids unsigned space APIs that return noisy 400s', () => {
+  const endpoints = getBilibiliUserInfoApiEndpoints('2031113');
+  assert.deepEqual(endpoints, ['https://api.bilibili.com/x/member/web/account']);
 });

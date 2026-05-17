@@ -4,6 +4,7 @@ import { LogService } from '../LogService';
 import { NotionBlock, NotionPage } from '../../../shared/types/notion';
 import { WeChatArticle } from '../../../shared/types/wechat';
 import { SyncState, SyncStatus } from '../../../shared/types/sync';
+import { getNotionFieldMap, getNotionProperty, readDateValue, readPlainText } from './notionFields';
 
 export interface WeChatSyncFlowContext {
   notionService: NotionService;
@@ -62,7 +63,8 @@ export async function syncArticleToWeChat(
       throw new Error('无法获取文章属性，请检查数据库 ID 是否正确');
     }
 
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const notionConfig = context.notionService.getConfig();
+    const linkStart = readPlainText(getNotionProperty(page, notionConfig, 'linkStart'));
     const mainImage = context.getCoverImageUrl(page);
     if (mainImage) {
       LogService.log(`封面图片: ${mainImage.substring(0, 60)}...`, 'SyncService');
@@ -171,10 +173,11 @@ export async function syncArticleToWeChat(
     }
 
     try {
-      const currentAddedTime = page.properties.AddedTime?.date?.start;
+      const addedTimeField = getNotionFieldMap(notionConfig).addedTime;
+      const currentAddedTime = readDateValue(getNotionProperty(page, notionConfig, 'addedTime'));
       if (!currentAddedTime) {
         await context.notionService.updatePageProperties(articleId, {
-          AddedTime: {
+          [addedTimeField]: {
             date: {
               start: new Date().toISOString(),
             },

@@ -81,7 +81,7 @@ export function setupIpcHandlers(
       weChatService = new WeChatService(configService);
       
       // 初始化 WordPress 服务（如果配置了）
-      if (config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword) {
+      if (config.wordpress?.enabled && config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword) {
         wordPressService = new WordPressService(configService);
       } else {
         wordPressService = null;
@@ -171,6 +171,14 @@ export function setupIpcHandlers(
       throw new Error('同步服务未初始化');
     }
     syncService.resetSyncState(articleId);
+    return true;
+  });
+
+  ipcMain.handle('clear-platform-sync-state', async (event, articleId: string, platform: 'wechat' | 'bilibili' | 'wordpress') => {
+    if (!syncService) {
+      throw new Error('同步服务未初始化');
+    }
+    syncService.clearPlatformState(articleId, platform);
     return true;
   });
 
@@ -373,6 +381,14 @@ export function setupIpcHandlers(
       return tempBiliService.checkFFmpegInstalled();
     }
     return bilibiliService.checkFFmpegInstalled();
+  });
+
+  // 获取B站合集列表（含分组）
+  ipcMain.handle('bilibili-get-seasons', async () => {
+    if (!bilibiliService) {
+      throw new Error('B站服务未初始化，请先启用 B站 并保存设置');
+    }
+    return bilibiliService.getSeasonList();
   });
 
   // 获取B站用户信息

@@ -173,8 +173,8 @@ export const collectSyncFailures = (
     states: Record<string, SyncState>;
   }> = [
     { platform: 'wechat', states: wechatStates },
-    { platform: 'wordpress', states: wpSyncStates },
-    { platform: 'bilibili', states: biliSyncStates }
+    { platform: 'bilibili', states: biliSyncStates },
+    { platform: 'wordpress', states: wpSyncStates }
   ];
 
   return articles.flatMap(article => (

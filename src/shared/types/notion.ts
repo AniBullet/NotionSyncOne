@@ -1,7 +1,17 @@
 export interface NotionConfig {
   apiKey: string;
   databaseId: string;
+  fieldMap?: Partial<Record<NotionFieldKey, string>>;
 }
+
+export type NotionFieldKey =
+  | 'linkStart'
+  | 'from'
+  | 'author'
+  | 'featureTag'
+  | 'expectationsRate'
+  | 'engine'
+  | 'addedTime';
 
 export interface NotionPage {
   id: string;

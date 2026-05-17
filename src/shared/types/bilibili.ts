@@ -73,10 +73,10 @@ export interface BilibiliMetadata {
   upCloseDanmu?: boolean;
   // Notion 页面属性（用于简介模板）
   notionProps?: {
-    from?: string;         // 来源
-    author?: string;       // 作者
+    from?: string;         // 来源平台
+    author?: string;       // 原作者
     engine?: string;       // 使用引擎
-    expectationsRate?: number;  // 个人期望
+    expectationsRate?: number;  // 个人期待值
     tags?: string[];       // 标签特色
     addedTime?: string;    // 添加时间
     linkStart?: string;    // 链接
@@ -96,6 +96,17 @@ export interface BilibiliUploadOptions {
   compressionQuality?: number;
   // 文章ID（用于进度追踪）
   articleId?: string;
+}
+
+export interface BilibiliSection {
+  sectionId: number;
+  sectionName: string;
+}
+
+export interface BilibiliSeason {
+  seasonId: number;
+  seasonName: string;
+  sections: BilibiliSection[];
 }
 
 export interface BilibiliUploadResult {

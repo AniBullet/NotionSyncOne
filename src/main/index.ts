@@ -58,7 +58,7 @@ async function initServices() {
         weChatService = new WeChatService(configService);
         
         // 初始化 WordPress 服务（如果配置了）
-        if (wpConfig?.siteUrl && wpConfig?.username && wpConfig?.appPassword) {
+        if (wpConfig?.enabled && wpConfig?.siteUrl && wpConfig?.username && wpConfig?.appPassword) {
           wordPressService = new WordPressService(configService);
           console.log('WordPress 服务初始化成功');
         } else {

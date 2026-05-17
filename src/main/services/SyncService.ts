@@ -174,6 +174,12 @@ export class SyncService {
     this.syncStateStore.reset(articleId);
   }
 
+  clearPlatformState(articleId: string, platform: 'wechat' | 'bilibili' | 'wordpress'): void {
+    const key = platform === 'bilibili' ? `bili_${articleId}` : platform === 'wordpress' ? `wp_${articleId}` : articleId;
+    LogService.log(`标记已解决：清除 ${platform} 同步状态 ${key}`, 'SyncService');
+    this.syncStateStore.reset(key);
+  }
+
   async syncArticle(articleId: string, publishMode: 'publish' | 'draft' = 'publish'): Promise<SyncState> {
     // 如果已经有正在进行的同步，先取消它
     if (this.activeSyncControllers.has(articleId)) {
@@ -276,7 +282,7 @@ export class SyncService {
     page: NotionPage,
     blocks: NotionBlock[]
   ): WeChatArticle {
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
     
     // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
     const mainImage = this.getCoverImageUrl(page);
@@ -353,13 +359,11 @@ export class SyncService {
       articleContent +
       '</section>';
 
-    const authorProperty = page.properties.Author;
-    const fromProperty = page.properties.From;
     // 使用 From 作为摘要，如果没有则使用标题
-    const digest = fromProperty?.rich_text?.[0]?.plain_text || page.title;
+    const digest = page.from || page.title;
 
     // 获取配置中的作者，如果配置中没有则从文章属性获取
-    const author = wechatConfig.author || authorProperty?.rich_text?.[0]?.plain_text || '';
+    const author = wechatConfig.author || page.author || '';
 
     // 应用标题模板（如果配置了）
     let finalTitle = page.title;
@@ -406,28 +410,32 @@ export class SyncService {
     }
     
     // LinkStart
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
     if (linkStart) {
       infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>链接</strong></td><td style="padding: 4px 8px; color: #333;"><span style="display: inline-block; padding: 2px 6px; background-color: #e6f2ff; border: 1px solid #1890ff; border-radius: 3px; box-sizing: border-box;"><a href="${linkStart}" style="color: #1890ff; text-decoration: none; font-weight: 500; box-sizing: border-box;">${this.escapeHtml(linkStart)}</a></span></td></tr>`);
     }
     
     // From
-    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
+    const from = page.from || page.properties.From?.rich_text?.[0]?.plain_text || '';
     if (from) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>来源</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>来源平台</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
     }
     
     // Author
-    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+    const author = page.author || page.properties.Author?.rich_text?.[0]?.plain_text || '';
     if (author) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>作者</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>原作者</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
     }
     
     // FeatureTag
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     if (featureTag) {
       let tagValue = '';
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagValue = featureTag.join(', ');
+      } else if (typeof featureTag === 'string') {
+        tagValue = featureTag;
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagValue = featureTag.select.name;
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagValue = featureTag.multi_select.map((tag: any) => tag.name).join(', ');
@@ -438,13 +446,13 @@ export class SyncService {
     }
     
     // ExpectationsRate - 显示为 X/10 格式
-    const expectationsRate = page.properties.ExpectationsRate?.number;
+    const expectationsRate = page.expectationsRate ?? page.properties.ExpectationsRate?.number;
     if (expectationsRate !== undefined && expectationsRate !== null) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>个人期望</strong></td><td style="padding: 4px 8px; color: #333;">${expectationsRate}/10</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>个人期待值</strong></td><td style="padding: 4px 8px; color: #333;">${expectationsRate}/10</td></tr>`);
     }
     
     // Engine
-    const engine = page.properties.Engine?.select?.name || '';
+    const engine = page.engine || page.properties.Engine?.select?.name || '';
     if (engine) {
       infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>使用引擎</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(engine)}</td></tr>`);
     }
@@ -621,9 +629,9 @@ export class SyncService {
     let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap, false);
 
     // 获取文章属性
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const from = page.from || page.properties.From?.rich_text?.[0]?.plain_text || '';
+    const author = page.author || page.properties.Author?.rich_text?.[0]?.plain_text || '';
 
     // 构建文章头部（顶部提示语 + 文章信息）
     let articleHeader = '';
@@ -660,10 +668,14 @@ export class SyncService {
     const excerpt = from || page.title.substring(0, 150);
 
     // 获取标签（从 FeatureTag 属性）
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     const tagNames: string[] = [];
     if (featureTag) {
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagNames.push(...featureTag);
+      } else if (typeof featureTag === 'string') {
+        tagNames.push(featureTag);
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagNames.push(featureTag.select.name);
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagNames.push(...featureTag.multi_select.map((tag: any) => tag.name));
@@ -721,19 +733,23 @@ export class SyncService {
 
     // 来源
     if (from) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">来源</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">来源平台</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
     }
 
     // 作者
     if (author) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">作者</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">原作者</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
     }
 
     // FeatureTag - 标签特色
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     if (featureTag) {
       let tagValue = '';
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagValue = featureTag.join(', ');
+      } else if (typeof featureTag === 'string') {
+        tagValue = featureTag;
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagValue = featureTag.select.name;
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagValue = featureTag.multi_select.map((tag: any) => tag.name).join(', ');
@@ -744,13 +760,13 @@ export class SyncService {
     }
 
     // ExpectationsRate - 个人期望
-    const expectationsRate = page.properties.ExpectationsRate?.number;
+    const expectationsRate = page.expectationsRate ?? page.properties.ExpectationsRate?.number;
     if (expectationsRate !== undefined && expectationsRate !== null) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">个人期望</td><td style="padding: 6px 10px; color: #333;">${expectationsRate}/10</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">个人期待值</td><td style="padding: 6px 10px; color: #333;">${expectationsRate}/10</td></tr>`);
     }
 
     // Engine - 使用引擎
-    const engine = page.properties.Engine?.select?.name || '';
+    const engine = page.engine || page.properties.Engine?.select?.name || '';
     if (engine) {
       infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">使用引擎</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(engine)}</td></tr>`);
     }

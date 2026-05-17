@@ -25,10 +25,21 @@ test('wechat readiness reports missing AppSecret', () => {
   assert.equal(readiness.wechat.summary, '缺 AppSecret');
 });
 
-test('wordpress readiness reports each required missing field', () => {
+test('wordpress readiness treats disabled platform as not enabled', () => {
   const readiness = getPlatformReadiness({
     ...baseConfig,
-    wordpress: { siteUrl: '', username: 'admin', appPassword: '' }
+    wordpress: { enabled: false, siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' }
+  });
+
+  assert.equal(readiness.wordpress.configured, false);
+  assert.deepEqual(readiness.wordpress.missingFields, ['未启用']);
+  assert.equal(readiness.wordpress.summary, '未启用');
+});
+
+test('enabled wordpress readiness reports each required missing field', () => {
+  const readiness = getPlatformReadiness({
+    ...baseConfig,
+    wordpress: { enabled: true, siteUrl: '', username: 'admin', appPassword: '' }
   });
 
   assert.equal(readiness.wordpress.configured, false);
@@ -50,7 +61,7 @@ test('bilibili readiness treats disabled platform as not enabled', () => {
 test('action state asks for selection before platform configuration', () => {
   const readiness = getPlatformReadiness({
     ...baseConfig,
-    wordpress: { siteUrl: '', username: '', appPassword: '' }
+    wordpress: { enabled: true, siteUrl: '', username: '', appPassword: '' }
   });
 
   assert.deepEqual(getSyncActionState('wordpress', readiness, 0), {
@@ -62,7 +73,7 @@ test('action state asks for selection before platform configuration', () => {
 test('action state explains missing platform fields after selection', () => {
   const readiness = getPlatformReadiness({
     ...baseConfig,
-    wordpress: { siteUrl: '', username: 'admin', appPassword: '' }
+    wordpress: { enabled: true, siteUrl: '', username: 'admin', appPassword: '' }
   });
 
   assert.deepEqual(getSyncActionState('wordpress', readiness, 2), {
@@ -71,10 +82,10 @@ test('action state explains missing platform fields after selection', () => {
   });
 });
 
-test('all-platform sync requires wechat and wordpress only', () => {
+test('all-platform sync skips disabled wordpress and bilibili', () => {
   const readiness = getPlatformReadiness({
     ...baseConfig,
-    wordpress: { siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' },
+    wordpress: { enabled: false, siteUrl: 'https://example.com', username: 'admin', appPassword: 'app-pass' },
     bilibili: { enabled: false }
   });
 
@@ -94,8 +105,12 @@ test('sync target display metadata uses readable short brand labels', () => {
     compactLabel: 'B站',
     ariaLabel: '同步到 B站'
   });
+  assert.deepEqual(getSyncTargetDisplay('wordpress'), {
+    compactLabel: 'WP',
+    ariaLabel: '同步到 WordPress'
+  });
   assert.deepEqual(getSyncTargetDisplay('both'), {
     compactLabel: '全部',
-    ariaLabel: '同步到微信和 WordPress'
+    ariaLabel: '同步到已启用平台'
   });
 });

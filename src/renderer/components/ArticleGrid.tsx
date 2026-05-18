@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
+import {
+  getSyncBadgePresentation,
+  PLATFORM_LABELS
+} from '../utils/syncPresentation';
+import type { SyncPlatform } from '../utils/syncPresentation';
 
 // 封面图
 const CoverImage: React.FC<{ coverUrl?: string; title: string }> = ({ coverUrl, title }) => {
@@ -15,7 +20,18 @@ const CoverImage: React.FC<{ coverUrl?: string; title: string }> = ({ coverUrl, 
         alignItems: 'center',
         justifyContent: 'center'
       }}>
-        <span style={{ fontSize: '40px', opacity: 0.1 }}>📄</span>
+        <span
+          aria-hidden="true"
+          style={{
+            width: '34px',
+            height: '44px',
+            borderRadius: '6px',
+            border: '2px solid var(--border-medium)',
+            backgroundColor: 'var(--bg-primary)',
+            boxShadow: 'inset 0 -10px 0 var(--bg-secondary)',
+            opacity: 0.55
+          }}
+        />
       </div>
     );
   }
@@ -45,45 +61,90 @@ interface ArticleGridProps {
   selectedArticles: Set<string>;
   onToggleArticle: (id: string) => void;
   onPreview?: (articleId: string) => void;
+  onShowSyncFailure?: (articleId: string, platform: SyncPlatform) => void;
 }
 
-// 同步状态徽章（显示在卡片上）
+// Compact sync status dots for dense article cards.
 const SyncBadges: React.FC<{
   wechatState?: SyncState;
   wpState?: SyncState;
   biliState?: SyncState;
-}> = ({ wechatState, wpState, biliState }) => {
-  const getBadge = (state: SyncState | undefined, icon: string, title: string) => {
+  onShowFailure?: (platform: SyncPlatform) => void;
+}> = ({ wechatState, wpState, biliState, onShowFailure }) => {
+  const getBadge = (state: SyncState | undefined, platform: SyncPlatform) => {
     if (!state) return null;
-    
-    let color = 'var(--text-tertiary)';
-    if (state.status === SyncStatus.SUCCESS) color = '#10B981';
-    else if (state.status === SyncStatus.FAILED) color = '#EF4444';
-    else if (state.status === SyncStatus.SYNCING) color = '#F59E0B';
-    
+
+    const badge = getSyncBadgePresentation(platform, state);
+    if (!badge) return null;
+
+    const title = PLATFORM_LABELS[platform];
+    const failed = state.status === SyncStatus.FAILED;
+    const tooltip = badge.reason ? `${title}: ${badge.statusText} - ${badge.reason}` : `${title}: ${badge.statusText}`;
+
     return (
-      <div 
-        key={title}
-        style={{ 
-          padding: '2px 6px', 
-          borderRadius: '4px',
-          backgroundColor: state.status === SyncStatus.SUCCESS ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
-          fontSize: '10px',
-          color,
-          fontWeight: '500'
+      <div
+        key={platform}
+        role={failed ? 'button' : undefined}
+        tabIndex={failed ? 0 : undefined}
+        onClick={event => {
+          if (!failed) return;
+          event.stopPropagation();
+          onShowFailure?.(platform);
         }}
-        title={`${title}: ${state.status === SyncStatus.SUCCESS ? '已同步' : state.status === SyncStatus.FAILED ? '失败' : '同步中...'}`}
+        onKeyDown={event => {
+          if (!failed || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onShowFailure?.(platform);
+        }}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '18px',
+          height: '18px',
+          borderRadius: '50%',
+          border: `1px solid ${badge.borderColor}`,
+          backgroundColor: badge.backgroundColor,
+          color: badge.color,
+          lineHeight: 1,
+          flexShrink: 0,
+          cursor: failed ? 'pointer' : 'default',
+          position: 'relative'
+        }}
+        aria-label={tooltip}
+        title={tooltip}
       >
-        {icon}
+        <span aria-hidden="true" style={{
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          backgroundColor: badge.color
+        }} />
+        {failed && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              right: '-1px',
+              bottom: '-1px',
+              width: '5px',
+              height: '5px',
+              borderRadius: '50%',
+              backgroundColor: '#EF4444',
+              border: '1px solid var(--bg-primary)'
+            }}
+          />
+        )}
       </div>
     );
   };
 
   return (
-    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-      {getBadge(wechatState, '💬', '微信')}
-      {getBadge(wpState, 'WP', 'WordPress')}
-      {getBadge(biliState, '📹', 'B站')}
+    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+      {getBadge(wechatState, 'wechat')}
+      {getBadge(biliState, 'bilibili')}
+      {getBadge(wpState, 'wordpress')}
     </div>
   );
 };
@@ -136,7 +197,7 @@ const ContextMenu: React.FC<{
         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
       >
-        🌐 外部浏览器打开
+        外部浏览器打开
       </button>
       <button
         style={itemStyle}
@@ -144,7 +205,7 @@ const ContextMenu: React.FC<{
         onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
         onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
       >
-        📱 内部浏览器打开
+        内部浏览器打开
       </button>
     </div>
   );
@@ -158,11 +219,12 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
   wpSyncStates,
   biliSyncStates,
   biliProgress,
-  hasWordPressConfig,
-  hasBilibiliConfig,
+  hasWordPressConfig: _hasWordPressConfig,
+  hasBilibiliConfig: _hasBilibiliConfig,
   selectedArticles,
   onToggleArticle,
-  onPreview
+  onPreview: _onPreview,
+  onShowSyncFailure
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; url?: string } | null>(null);
 
@@ -172,9 +234,9 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
     setContextMenu({ x: e.clientX, y: e.clientY, url });
   };
 
-  if (loading) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}>加载中...</div>;
-  if (error) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '32px', marginBottom: '12px' }}>😕</div>{error}</div>;
-  if (!articles.length) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '32px', marginBottom: '12px' }}>📭</div>暂无文章</div>;
+  if (loading) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}>正在加载文章...</div>;
+  if (error) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--error)' }}>加载失败</div>{error}</div>;
+  if (!articles.length) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--text-tertiary)' }}><div style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)' }}>暂无文章</div>检查 Notion 配置后刷新列表</div>;
 
   return (
     <div style={{ height: '100%', overflow: 'auto' }}>
@@ -202,7 +264,7 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
               onContextMenu={e => handleContextMenu(e, article.url)}
               style={{
                 backgroundColor: 'var(--bg-primary)',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 overflow: 'hidden',
                 border: sel ? '2px solid var(--primary-green)' : '1px solid var(--border-light)',
                 cursor: 'pointer',
@@ -263,6 +325,7 @@ const ArticleGrid: React.FC<ArticleGridProps> = ({
                     wechatState={syncStates[article.id]}
                     wpState={wpSyncStates[article.id]}
                     biliState={biliSyncStates[article.id]}
+                    onShowFailure={platform => onShowSyncFailure?.(article.id, platform)}
                   />
                 </div>
               </div>

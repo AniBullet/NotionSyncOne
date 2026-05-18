@@ -1,9 +1,9 @@
-import { IpcRequest, IpcResponse, IpcChannel } from '../types/ipc';
-import { NotionPage } from '../types/notion';
+import { IpcRequest, IpcChannel } from '../types/ipc';
 import { SyncState } from '../types/sync';
 import { Config } from '../types/config';
 import { NotionConfig } from '../types/notion';
 import { WordPressCategory, WordPressTag } from '../types/wordpress';
+import { BilibiliSeason } from '../types/bilibili';
 
 export class IpcService {
   /**
@@ -238,9 +238,16 @@ export class IpcService {
   }
 
   /**
+   * 获取用户 B站 合集列表（含分组）
+   */
+  static async getBilibiliSeasons(): Promise<BilibiliSeason[]> {
+    return window.electron.ipcRenderer.invoke('bilibili-get-seasons');
+  }
+
+  /**
    * 调用通用 IPC 方法
    */
   static async invoke(channel: string, ...args: any[]): Promise<any> {
     return window.electron.ipcRenderer.invoke(channel, ...args);
   }
-} 
+}

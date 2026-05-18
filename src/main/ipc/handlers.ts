@@ -45,7 +45,7 @@ export function setupIpcHandlers(
         });
         
         notification.show();
-      } catch (error) {
+      } catch {
         // 使用对话框作为备选
         await dialog.showMessageBox({
           type: 'info',
@@ -81,7 +81,7 @@ export function setupIpcHandlers(
       weChatService = new WeChatService(configService);
       
       // 初始化 WordPress 服务（如果配置了）
-      if (config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword) {
+      if (config.wordpress?.enabled && config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword) {
         wordPressService = new WordPressService(configService);
       } else {
         wordPressService = null;
@@ -174,6 +174,14 @@ export function setupIpcHandlers(
     return true;
   });
 
+  ipcMain.handle('clear-platform-sync-state', async (event, articleId: string, platform: 'wechat' | 'bilibili' | 'wordpress') => {
+    if (!syncService) {
+      throw new Error('同步服务未初始化');
+    }
+    syncService.clearPlatformState(articleId, platform);
+    return true;
+  });
+
   // 取消指定文章的同步
   ipcMain.handle('cancel-sync', async (event, articleId: string) => {
     if (!syncService) {
@@ -191,7 +199,7 @@ export function setupIpcHandlers(
   });
 
   // 日志相关
-  ipcMain.handle('get-logs', async (event, filter?: { level?: string, source?: string, keyword?: string }) => {
+  ipcMain.handle('get-logs', async (event, filter?: { level?: 'info' | 'error' | 'warn' | 'success', source?: string, keyword?: string }) => {
     return LogService.getLogs(filter);
   });
 
@@ -345,7 +353,6 @@ export function setupIpcHandlers(
   // 检查 biliup 是否安装 - 允许在服务未初始化时检查
   ipcMain.handle('check-biliup-installed', async () => {
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.checkBiliupInstalled();
     }
@@ -356,7 +363,6 @@ export function setupIpcHandlers(
   ipcMain.handle('ensure-biliup-installed', async () => {
     try {
       if (!bilibiliService) {
-        const { BilibiliService } = await import('../services/BilibiliService');
         const tempBiliService = new BilibiliService(configService!);
         return await tempBiliService.ensureBiliupInstalled();
       }
@@ -371,11 +377,18 @@ export function setupIpcHandlers(
   ipcMain.handle('check-ffmpeg-installed', async () => {
     if (!bilibiliService) {
       // 临时创建服务来检查
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.checkFFmpegInstalled();
     }
     return bilibiliService.checkFFmpegInstalled();
+  });
+
+  // 获取B站合集列表（含分组）
+  ipcMain.handle('bilibili-get-seasons', async () => {
+    if (!bilibiliService) {
+      throw new Error('B站服务未初始化，请先启用 B站 并保存设置');
+    }
+    return bilibiliService.getSeasonList();
   });
 
   // 获取B站用户信息
@@ -395,7 +408,6 @@ export function setupIpcHandlers(
   ipcMain.handle('bilibili-login', async (event, method: 'qrcode' | 'sms' | 'password' = 'qrcode') => {
     // 如果服务未初始化，临时创建一个用于登录
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.login(method);
     }
@@ -405,7 +417,6 @@ export function setupIpcHandlers(
   // B站退出登录
   ipcMain.handle('bilibili-logout', async () => {
     if (!bilibiliService) {
-      const { BilibiliService } = await import('../services/BilibiliService');
       const tempBiliService = new BilibiliService(configService!);
       return tempBiliService.logout();
     }
@@ -470,4 +481,4 @@ export function setupIpcHandlers(
     bilibiliService.cleanup();
     return true;
   });
-} 
+}

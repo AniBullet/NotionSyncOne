@@ -1,27 +1,81 @@
 import { spawn, execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import axios from 'axios';
 import { app, BrowserWindow } from 'electron';
 import {
-  BilibiliConfig,
   BilibiliVideo,
-  BilibiliMetadata,
   BilibiliUploadOptions,
-  BilibiliUploadResult
+  BilibiliUploadResult,
+  BilibiliSeason
 } from '../../shared/types/bilibili';
 import { ConfigService } from './ConfigService';
 import { LogService } from './LogService';
-import { logger } from '../utils/logger';
 
 // B站视频大小限制（字节）
 const MAX_VIDEO_SIZE = 8 * 1024 * 1024 * 1024; // 8GB
-const MAX_VIDEO_SIZE_8K = 16 * 1024 * 1024 * 1024; // 16GB（8K视频）
 
 // biliup 自动下载配置
-const BILIUP_GITHUB_API = 'https://api.github.com/repos/biliup/biliup-rs/releases/latest';
-const BILIUP_FALLBACK_URL = 'https://github.com/biliup/biliup-rs/releases/download/v0.2.4/biliupR-v0.2.4-x86_64-windows.zip';
+const BILIUP_GITHUB_API = 'https://api.github.com/repos/biliup/biliup/releases/latest';
+const BILIUP_FALLBACK_URL = 'https://github.com/biliup/biliup/releases/latest';
+
+type GitHubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
+type BilibiliCookieAuth = {
+  cookieString: string;
+  csrf: string;
+  accessToken?: string;
+};
+
+export type BilibiliUserInfo = {
+  name: string;
+  mid: string;
+  verifiedByCookie?: boolean;
+};
+
+export function describeBilibiliApiFailure(error: unknown): string {
+  if (!axios.isAxiosError(error)) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  const status = error.response?.status;
+  const data = error.response?.data as { code?: number | string; message?: string; msg?: string } | undefined;
+  const parts: string[] = [];
+
+  if (status != null) {
+    parts.push(`HTTP ${status}`);
+  } else {
+    parts.push(`network ${error.code || 'error'}`);
+  }
+
+  if (data?.code != null) {
+    parts.push(`code ${data.code}`);
+  }
+
+  const apiMessage = data?.message || data?.msg;
+  if (apiMessage) {
+    parts.push(`message: ${apiMessage}`);
+  } else if (error.message) {
+    parts.push(error.message);
+  }
+
+  return parts.join(', ');
+}
+
+export function getBilibiliFallbackUserInfo(mid: string): BilibiliUserInfo {
+  return {
+    name: '已登录，昵称暂不可用',
+    mid,
+    verifiedByCookie: true
+  };
+}
+
+export function getBilibiliUserInfoApiEndpoints(_mid: string): string[] {
+  return ['https://api.bilibili.com/x/member/web/account'];
+}
 
 export class BilibiliService {
   private configService: ConfigService;
@@ -97,7 +151,7 @@ export class BilibiliService {
     try {
       // 解析代理URL
       const url = new URL(proxyUrl);
-      const config: any = {
+      const config: { protocol?: string; host: string; port: number; auth?: { username: string; password: string } } = {
         host: url.hostname,
         port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80)
       };
@@ -116,9 +170,61 @@ export class BilibiliService {
       }
 
       return config;
-    } catch (error) {
+    } catch {
       LogService.warn(`代理URL解析失败: ${proxyUrl}`, 'BilibiliService');
       return false;
+    }
+  }
+
+  /**
+   * 读取 Windows 系统代理设置（注册表 Internet Settings）
+   * 这是 Clash / V2Ray 等代理软件写入的真实代理地址，优先级高于环境变量
+   */
+  private getWindowsSystemProxy(): string | null {
+    try {
+      const { execSync } = require('child_process');
+
+      // 检查代理是否已启用
+      const enableResult = execSync(
+        'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable',
+        { encoding: 'utf-8', stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      ) as string;
+      const enableMatch = enableResult.match(/ProxyEnable\s+REG_DWORD\s+(\w+)/);
+      if (!enableMatch || parseInt(enableMatch[1], 16) !== 1) {
+        return null; // 系统代理未启用
+      }
+
+      // 读取代理地址
+      const serverResult = execSync(
+        'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer',
+        { encoding: 'utf-8', stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      ) as string;
+      const serverMatch = serverResult.match(/ProxyServer\s+REG_SZ\s+(.+)/);
+      if (!serverMatch) return null;
+
+      const proxyServer = serverMatch[1].trim();
+
+      // 处理多协议格式：http=127.0.0.1:10809;socks=127.0.0.1:10808
+      if (proxyServer.includes('=')) {
+        const parts = proxyServer.split(';');
+        const proxyMap: Record<string, string> = {};
+        for (const part of parts) {
+          const eqIdx = part.indexOf('=');
+          if (eqIdx !== -1) {
+            proxyMap[part.slice(0, eqIdx).trim()] = part.slice(eqIdx + 1).trim();
+          }
+        }
+        // 按优先级选择：https > http > socks
+        if (proxyMap['https']) return `http://${proxyMap['https']}`;
+        if (proxyMap['http']) return `http://${proxyMap['http']}`;
+        if (proxyMap['socks']) return `socks5://${proxyMap['socks']}`;
+        return null;
+      }
+
+      // 简单格式：127.0.0.1:10809
+      return `http://${proxyServer}`;
+    } catch {
+      return null; // 非 Windows 或注册表读取失败
     }
   }
 
@@ -156,10 +262,194 @@ export class BilibiliService {
     });
   }
 
+  private readCookieAuth(cookieFile: string): BilibiliCookieAuth {
+    const cookieData = JSON.parse(fs.readFileSync(cookieFile, 'utf-8'));
+    const entries: Array<{ name: string; value: string }> = cookieData.cookie_info?.cookies
+      ? cookieData.cookie_info.cookies
+      : Object.entries(cookieData)
+        .filter(([key]) => !['token_info', 'sso', 'platform', 'cookie_info'].includes(key))
+        .map(([name, value]) => ({ name, value: String(value) }));
+
+    const cookieString = entries.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+    const csrf = entries.find(cookie => cookie.name === 'bili_jct')?.value || cookieData.bili_jct;
+    const accessToken = cookieData.token_info?.access_token as string | undefined;
+
+    if (!cookieString || !csrf) {
+      throw new Error('Cookie 中缺少 bili_jct，无法加入 B站合集分组');
+    }
+
+    return { cookieString, csrf, accessToken };
+  }
+
+  private async getUploadedVideoInfo(auth: BilibiliCookieAuth, result: BilibiliUploadResult): Promise<{ aid: number; cid: number; title: string }> {
+    const params = result.aid ? { aid: result.aid } : result.bvid ? { bvid: result.bvid } : null;
+    if (!params) {
+      throw new Error('上传结果缺少 aid/bvid，无法加入 B站合集分组');
+    }
+
+    LogService.log(`查询稿件信息 params=${JSON.stringify(params)} accessToken=${auth.accessToken ? '有' : '无'}`, 'BilibiliService');
+
+    const axiosErrMsg = (err: unknown) => {
+      const axiosData = (err as any)?.response?.data;
+      const httpStatus = (err as any)?.response?.status;
+      if (axiosData !== undefined && typeof axiosData === 'object') {
+        return `HTTP ${httpStatus}: ${axiosData?.message || axiosData?.msg || JSON.stringify(axiosData)}`;
+      }
+      return err instanceof Error ? err.message : String(err);
+    };
+
+    // 优先用 client API（与 biliup 相同），草稿/延时发布稿件均可查
+    if (auth.accessToken) {
+      try {
+        const vid = params.bvid ? `bvid=${params.bvid}` : `aid=${params.aid}`;
+        const res = await axios.get(
+          `https://member.bilibili.com/x/client/archive/view?access_key=${encodeURIComponent(auth.accessToken)}&${vid}`,
+          { headers: { 'User-Agent': 'NotionSyncOne' }, timeout: 15000 }
+        );
+        if (res.data?.code === 0) {
+          const archive = res.data?.data?.archive;
+          const cid = res.data?.data?.videos?.[0]?.cid;
+          if (archive?.aid && cid && archive?.title) {
+            LogService.log(`稿件信息(client): aid=${archive.aid}, cid=${cid}, title=${archive.title}`, 'BilibiliService');
+            return { aid: Number(archive.aid), cid: Number(cid), title: String(archive.title) };
+          }
+        }
+        LogService.log(`client API 返回非 0 (code=${res.data?.code}): ${res.data?.message}`, 'BilibiliService');
+      } catch (err) {
+        LogService.log(`client API 请求失败: ${axiosErrMsg(err)}`, 'BilibiliService');
+      }
+    }
+
+    // 回退：用 pagelist 获取 cid（发布/延时发布均可）
+    if (params.bvid || params.aid) {
+      try {
+        const res = await axios.get('https://api.bilibili.com/x/player/pagelist', {
+          params,
+          headers: { Cookie: auth.cookieString, 'User-Agent': 'NotionSyncOne' },
+          timeout: 15000
+        });
+        if (res.data?.code === 0 && res.data?.data?.[0]?.cid) {
+          const cid = res.data.data[0].cid;
+          const title = res.data.data[0].part || result.bvid || String(params.aid);
+          LogService.log(`稿件信息(pagelist): cid=${cid}`, 'BilibiliService');
+          // aid 从 bvid 转换或直接用传入值
+          const aid = params.aid ?? 0;
+          return { aid: Number(aid), cid: Number(cid), title };
+        }
+        LogService.log(`pagelist 返回非 0 (code=${res.data?.code}): ${res.data?.message}`, 'BilibiliService');
+      } catch (err) {
+        LogService.log(`pagelist 请求失败: ${axiosErrMsg(err)}`, 'BilibiliService');
+      }
+    }
+
+    throw new Error('无法获取稿件 cid，草稿/延时发布稿件可能尚未被索引；请稍后在 B站创作中心手动加入合集');
+  }
+
+  private async addVideoToSeasonSection(auth: BilibiliCookieAuth, sectionId: number, result: BilibiliUploadResult): Promise<void> {
+    const video = await this.getUploadedVideoInfo(auth, result);
+
+    const requestBody = {
+      sectionId,
+      episodes: [{
+        aid: video.aid,
+        cid: video.cid,
+        title: video.title,
+        charging_pay: 0
+      }],
+      csrf: auth.csrf
+    };
+    LogService.log(`加入合集 sectionId=${sectionId}, aid=${video.aid}, cid=${video.cid}, title="${video.title}"`, 'BilibiliService');
+
+    try {
+      const response = await axios.post(
+        `https://member.bilibili.com/x2/creative/web/season/section/episodes/add?csrf=${encodeURIComponent(auth.csrf)}`,
+        requestBody,
+        {
+          headers: {
+            Cookie: auth.cookieString,
+            Referer: 'https://member.bilibili.com/platform/upload-manager/article',
+            Origin: 'https://member.bilibili.com',
+            'Content-Type': 'application/json',
+            'User-Agent': 'NotionSyncOne'
+          },
+          timeout: 15000
+        }
+      );
+
+      if (response.data?.code !== 0) {
+        const apiMsg = response.data?.message || response.data?.msg || '加入合集分组失败';
+        LogService.error(`加入合集 API 返回非 0 (code=${response.data?.code}): ${apiMsg}`, 'BilibiliService');
+        throw new Error(`加入合集分组失败 (code=${response.data?.code}): ${apiMsg}`);
+      }
+    } catch (err) {
+      const axiosData = (err as any)?.response?.data;
+      const httpStatus = (err as any)?.response?.status;
+      if (axiosData !== undefined) {
+        LogService.error(`加入合集请求失败 HTTP ${httpStatus}: ${JSON.stringify(axiosData)}`, 'BilibiliService');
+        throw new Error(`加入合集分组失败 (HTTP ${httpStatus}): ${axiosData?.message || axiosData?.msg || JSON.stringify(axiosData)}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * 获取用户的合集列表（含每个合集下的分组）
+   */
+  async getSeasonList(): Promise<BilibiliSeason[]> {
+    const config = this.configService.getBilibiliConfig();
+    const cookieFile = config.cookieFile || path.join(this.tempDir, 'cookies.json');
+
+    if (!fs.existsSync(cookieFile)) {
+      throw new Error('未找到 B站 Cookie 文件，请先登录');
+    }
+
+    const auth = this.readCookieAuth(cookieFile);
+    const headers = {
+      Cookie: auth.cookieString,
+      Referer: 'https://member.bilibili.com',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    };
+
+    // 拉合集列表，参数与 biliup Python 版一致
+    const seasonsRes = await axios.get('https://member.bilibili.com/x2/creative/web/seasons', {
+      params: { pn: 1, ps: 50, order: 'mtime', sort: 'desc', draft: 1 },
+      headers,
+      timeout: 15000
+    });
+
+    if (seasonsRes.data?.code !== 0) {
+      throw new Error(seasonsRes.data?.message || '获取合集列表失败');
+    }
+
+    // 响应结构：data.seasons[].season / data.seasons[].sections.sections[]
+    const rawSeasons: any[] = seasonsRes.data?.data?.seasons ?? [];
+    LogService.log(`获取到 ${rawSeasons.length} 个合集`, 'BilibiliService');
+
+    const seasons = rawSeasons.map((item: any) => {
+      const s = item.season ?? item;
+      const seasonId: number = s.id ?? s.season_id;
+      const seasonName: string = s.title ?? s.name ?? String(seasonId);
+
+      const rawSections: any[] = item.sections?.sections ?? item.sections ?? [];
+      const sections = rawSections.map((sec: any) => ({
+        sectionId: sec.id ?? sec.section_id,
+        sectionName: sec.title ?? sec.name ?? String(sec.id ?? sec.section_id)
+      }));
+
+      if (sections.length === 0) {
+        sections.push({ sectionId: seasonId, sectionName: '默认分组' });
+      }
+
+      return { seasonId, seasonName, sections };
+    });
+
+    return seasons;
+  }
+
   /**
    * 获取B站用户信息（安全：不记录敏感Cookie内容）
    */
-  async getUserInfo(): Promise<{ name: string; mid: string } | null> {
+  async getUserInfo(): Promise<BilibiliUserInfo | null> {
     try {
       const config = this.configService.getBilibiliConfig();
       const cookieFile = config.cookieFile || path.join(this.tempDir, 'cookies.json');
@@ -180,7 +470,7 @@ export class BilibiliService {
         mid = String(cookieData.token_info.mid);
       } else if (cookieData.cookie_info && cookieData.cookie_info.cookies) {
         // 新格式：从 cookies 数组中查找
-        const dedeUserIdCookie = cookieData.cookie_info.cookies.find((c: any) => c.name === 'DedeUserID');
+        const dedeUserIdCookie = cookieData.cookie_info.cookies.find((c: { name: string; value: string }) => c.name === 'DedeUserID');
         mid = dedeUserIdCookie?.value;
       } else {
         // 旧格式：直接从顶层获取
@@ -198,7 +488,7 @@ export class BilibiliService {
       if (cookieData.cookie_info && cookieData.cookie_info.cookies) {
         // 新格式：从 cookies 数组构建
         cookieString = cookieData.cookie_info.cookies
-          .map((c: any) => `${c.name}=${c.value}`)
+          .map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
           .join('; ');
       } else {
         // 旧格式：直接从顶层键值对构建
@@ -208,15 +498,7 @@ export class BilibiliService {
           .join('; ');
       }
 
-      // 尝试多个 API 端点获取用户信息
-      const apiEndpoints = [
-        // 方法1: 用户空间信息 API（不需要登录）
-        `https://api.bilibili.com/x/space/wbi/acc/info?mid=${mid}`,
-        // 方法2: 个人信息 API（需要登录，更准确）
-        `https://api.bilibili.com/x/member/web/account`,
-        // 方法3: 基础信息 API
-        `https://api.bilibili.com/x/space/acc/info?mid=${mid}`
-      ];
+      const apiEndpoints = getBilibiliUserInfoApiEndpoints(mid);
       
       for (const apiUrl of apiEndpoints) {
         try {
@@ -229,40 +511,23 @@ export class BilibiliService {
             timeout: 8000
           });
 
-          // 方法2返回的数据结构不同
-          if (apiUrl.includes('/member/web/account')) {
-            if (response.data?.code === 0 && response.data?.data?.uname) {
-              const userInfo = {
-                name: response.data.data.uname,
-                mid: mid
-              };
-              LogService.log(`✅ 获取到用户信息: ${userInfo.name} (${userInfo.mid})`, 'BilibiliService');
-              return userInfo;
-            }
-          } else {
-            // 方法1和方法3
-            if (response.data?.code === 0 && response.data?.data?.name) {
-              const userInfo = {
-                name: response.data.data.name,
-                mid: mid
-              };
-              LogService.log(`✅ 获取到用户信息: ${userInfo.name} (${userInfo.mid})`, 'BilibiliService');
-              return userInfo;
-            }
+          if (response.data?.code === 0 && response.data?.data?.uname) {
+            const userInfo = {
+              name: response.data.data.uname,
+              mid: mid
+            };
+            LogService.log(`获取到 B站用户信息: ${userInfo.name} (${userInfo.mid})`, 'BilibiliService');
+            return userInfo;
           }
-        } catch (apiError: any) {
-          const errorCode = apiError?.response?.data?.code;
-          LogService.warn(`API ${apiUrl} 失败 (code: ${errorCode})，尝试下一个`, 'BilibiliService');
+        } catch (apiError) {
+          LogService.log(`B站昵称接口暂不可用（${describeBilibiliApiFailure(apiError)}），将使用 Cookie UID 继续`, 'BilibiliService');
           continue;
         }
       }
 
-      // 所有 API 都失败，返回基本信息（至少显示 UID）
-      LogService.warn('所有 API 均失败，显示默认信息', 'BilibiliService');
-      return {
-        name: `B站用户`,  // 简洁的默认显示
-        mid: mid
-      };
+      // 昵称查询失败不影响登录态；上传继续使用 Cookie。
+      LogService.log('已从 Cookie 读取到 B站 UID，将按已登录状态继续', 'BilibiliService');
+      return getBilibiliFallbackUserInfo(mid);
     } catch (error) {
       LogService.error('获取用户信息失败', 'BilibiliService', error);
       return null;
@@ -273,14 +538,14 @@ export class BilibiliService {
    * 登录B站 - 优雅的交互方式
    * 策略：直接打开浏览器进行网页扫码登录，然后提取Cookie
    */
-  async login(method: 'qrcode' | 'sms' | 'password' = 'qrcode'): Promise<void> {
+  async login(_method: 'qrcode' | 'sms' | 'password' = 'qrcode'): Promise<void> {
     try {
       const isReady = await this.ensureBiliupInstalled();
       if (!isReady) {
         throw new Error(
           'biliup 自动安装失败\n\n' +
           '请手动安装：\n' +
-          '   - Windows: winget install -e --id ForgQi.biliup-rs\n' +
+          '   - uv tool install biliup\n' +
           '   - 或访问: https://github.com/biliup/biliup/releases\n' +
           '安装后请【完全关闭并重新打开】应用程序'
         );
@@ -317,7 +582,7 @@ export class BilibiliService {
         
         LogService.log(`执行命令: ${command.substring(0, 100)}...`, 'BilibiliService');
         
-        exec(command, (error) => {
+        exec(command, (error: Error | null) => {
           if (error) {
             LogService.error(`启动登录窗口失败: ${error.message}`, 'BilibiliService');
             fs.unlinkSync(lockFile);
@@ -356,7 +621,7 @@ export class BilibiliService {
                   resolve();
                   return;
                 }
-              } catch (err) {
+              } catch {
                 // Cookie 格式错误
               }
             }
@@ -380,7 +645,7 @@ export class BilibiliService {
                   if (fs.existsSync(lockFile)) {
                     fs.unlinkSync(lockFile);
                   }
-                } catch (err) {
+                } catch {
                   // 忽略
                 }
                 
@@ -394,7 +659,7 @@ export class BilibiliService {
                 
                 resolve();
               }
-            } catch (err) {
+            } catch {
               // Cookie 文件可能还在写入中，继续等待
             }
           }
@@ -408,7 +673,7 @@ export class BilibiliService {
               if (fs.existsSync(lockFile)) {
                 fs.unlinkSync(lockFile);
               }
-            } catch (err) {
+            } catch {
               // 忽略
             }
             
@@ -566,8 +831,8 @@ export class BilibiliService {
       LogService.success(`✓ 封面图片下载完成: ${(stats.size / 1024).toFixed(2)} KB (已缓存)`, 'BilibiliService');
       return cachedPath;
 
-    } catch (error: any) {
-      const errorMsg = error?.message || String(error);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       LogService.error(`❌ 封面下载失败: ${errorMsg}`, 'BilibiliService');
       LogService.log(`💡 将使用B站默认封面（视频第一帧），上传后可在B站后台手动修改`, 'BilibiliService');
       throw new Error(`封面图片下载失败: ${errorMsg}`);
@@ -592,20 +857,27 @@ export class BilibiliService {
         '-o', outputPath  // 输出文件
       ];
 
-      // 检测并配置代理（支持 HTTP 和 SOCKS5）
-      const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-      const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-      const allProxy = process.env.ALL_PROXY || process.env.all_proxy;
-      
-      const isHttps = imageUrl.startsWith('https://');
-      const proxyUrl = isHttps ? (httpsProxy || allProxy || httpProxy) : (httpProxy || allProxy);
-      
-      if (proxyUrl) {
-        // curl 支持 socks5:// 协议前缀
-        // 如果代理是 http://，curl会自动处理
-        // 如果代理是 socks5://，curl也会正确处理
-        args.push('--proxy', proxyUrl);
-        LogService.log(`使用代理下载: ${proxyUrl.replace(/:\/\/.*@/, '://*****@')}`, 'BilibiliService');
+      // 代理查找（与 downloadWithYtDlp 相同的三级优先级）：
+      //   1. 手动配置  2. 环境变量  3. Windows 系统代理
+      const curlBilibiliConfig = this.configService.getBilibiliConfig();
+      let curlProxy: string | null = null;
+
+      if (curlBilibiliConfig.proxy?.trim()) {
+        curlProxy = curlBilibiliConfig.proxy.trim();
+      } else {
+        const httpProxy = process.env.HTTPS_PROXY || process.env.https_proxy ||
+                          process.env.ALL_PROXY || process.env.all_proxy ||
+                          process.env.HTTP_PROXY || process.env.http_proxy;
+        if (httpProxy) {
+          curlProxy = httpProxy;
+        } else {
+          curlProxy = this.getWindowsSystemProxy();
+        }
+      }
+
+      if (curlProxy) {
+        args.push('--proxy', curlProxy);
+        LogService.log(`使用代理下载封面: ${curlProxy.replace(/:\/\/[^@]*@/, '://***@')}`, 'BilibiliService');
       }
 
       args.push(imageUrl);
@@ -697,6 +969,42 @@ export class BilibiliService {
         '--newline',                  // 每行显示新进度
         '--extractor-args', 'youtube:player_client=android_vr'  // android_vr 客户端不需要 PO Token
       ];
+
+      // 代理注入（三级优先级）：
+      //   1. 手动配置（BilibiliConfig.proxy）
+      //   2. 进程环境变量（HTTPS_PROXY / ALL_PROXY 等）
+      //   3. Windows 系统代理（注册表 Internet Settings，Clash/V2Ray 写入此处）
+      const bilibiliConfig = this.configService.getBilibiliConfig();
+      let resolvedProxy: string | null = null;
+      let proxySource = '';
+
+      if (bilibiliConfig.proxy && bilibiliConfig.proxy.trim()) {
+        resolvedProxy = bilibiliConfig.proxy.trim();
+        proxySource = '手动配置';
+      } else {
+        const envProxy = this.getProxyConfig(url);
+        if (envProxy && typeof envProxy !== 'boolean') {
+          let proxyUrl = `${envProxy.protocol || 'http'}://${envProxy.host}:${envProxy.port}`;
+          if (envProxy.auth) {
+            proxyUrl = `${envProxy.protocol || 'http'}://${envProxy.auth.username}:${envProxy.auth.password}@${envProxy.host}:${envProxy.port}`;
+          }
+          resolvedProxy = proxyUrl;
+          proxySource = '环境变量';
+        } else {
+          const sysProxy = this.getWindowsSystemProxy();
+          if (sysProxy) {
+            resolvedProxy = sysProxy;
+            proxySource = 'Windows系统代理';
+          }
+        }
+      }
+
+      if (resolvedProxy) {
+        args.push('--proxy', resolvedProxy);
+        LogService.log(`yt-dlp 使用代理 [${proxySource}]: ${resolvedProxy.replace(/:\/\/[^@]*@/, '://***@')}`, 'BilibiliService');
+      } else {
+        LogService.warn('yt-dlp 未检测到任何代理配置，直连下载（可能需要代理才能访问 YouTube）', 'BilibiliService');
+      }
 
       const process = spawn(ytDlpPath, args, {
         shell: true,
@@ -819,7 +1127,7 @@ export class BilibiliService {
 
     LogService.log('开始自动下载 biliup...', 'BilibiliService');
 
-    let downloadUrl = BILIUP_FALLBACK_URL;
+    let downloadAsset: GitHubReleaseAsset | null = null;
 
     // 尝试从 GitHub API 获取最新版本
     try {
@@ -827,24 +1135,29 @@ export class BilibiliService {
         timeout: 10000,
         headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'NotionSyncOne' }
       });
-      const assets: any[] = resp.data?.assets || [];
-      const winAsset = assets.find((a: any) =>
-        a.name && a.name.includes('x86_64-windows') && a.name.endsWith('.zip')
+      const assets: GitHubReleaseAsset[] = resp.data?.assets || [];
+      const winAsset = assets.find((a) =>
+        a.name && /windows|win/i.test(a.name) && (a.name.endsWith('.zip') || a.name.endsWith('.exe'))
       );
       if (winAsset?.browser_download_url) {
-        downloadUrl = winAsset.browser_download_url;
+        downloadAsset = winAsset;
         LogService.log(`获取到最新版本: ${resp.data.tag_name}`, 'BilibiliService');
       }
     } catch {
-      LogService.warn('无法获取最新版本信息，使用备用下载地址', 'BilibiliService');
+      LogService.warn(`无法获取最新版本信息，请手动访问 ${BILIUP_FALLBACK_URL} 安装`, 'BilibiliService');
     }
 
-    const zipPath = path.join(this.toolsDir, 'biliup-download.zip');
+    if (!downloadAsset?.browser_download_url || !downloadAsset.name) {
+      LogService.error(`未找到 biliup Windows 可执行下载资产，请手动访问 ${BILIUP_FALLBACK_URL} 安装`, 'BilibiliService');
+      return null;
+    }
+
+    const isZip = downloadAsset.name.endsWith('.zip');
+    const downloadPath = path.join(this.toolsDir, isZip ? 'biliup-download.zip' : 'biliup-download.exe');
 
     try {
-      // 下载 zip
-      LogService.log(`下载地址: ${downloadUrl}`, 'BilibiliService');
-      const response = await axios.get(downloadUrl, {
+      LogService.log(`下载地址: ${downloadAsset.browser_download_url}`, 'BilibiliService');
+      const response = await axios.get(downloadAsset.browser_download_url, {
         responseType: 'arraybuffer',
         timeout: 120000,
         headers: { 'User-Agent': 'NotionSyncOne' },
@@ -858,7 +1171,16 @@ export class BilibiliService {
         }
       });
 
-      fs.writeFileSync(zipPath, Buffer.from(response.data));
+      fs.writeFileSync(downloadPath, Buffer.from(response.data));
+
+      if (!isZip) {
+        fs.copyFileSync(downloadPath, targetPath);
+        fs.unlinkSync(downloadPath);
+        this.biliupPath = targetPath;
+        LogService.success(`biliup 安装成功: ${targetPath}`, 'BilibiliService');
+        return targetPath;
+      }
+
       LogService.log('下载完成，正在解压...', 'BilibiliService');
 
       // 使用 PowerShell 解压（Windows 10+ 自带）
@@ -869,7 +1191,7 @@ export class BilibiliService {
 
       const { execSync } = require('child_process');
       execSync(
-        `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`,
+        `powershell -NoProfile -Command "Expand-Archive -Path '${downloadPath}' -DestinationPath '${extractDir}' -Force"`,
         { stdio: 'pipe', windowsHide: true, timeout: 30000 }
       );
 
@@ -885,7 +1207,7 @@ export class BilibiliService {
 
       // 清理临时文件
       try {
-        fs.unlinkSync(zipPath);
+        fs.unlinkSync(downloadPath);
         fs.rmSync(extractDir, { recursive: true, force: true });
       } catch { /* 清理失败不影响功能 */ }
 
@@ -894,7 +1216,7 @@ export class BilibiliService {
     } catch (error) {
       LogService.error('自动下载 biliup 失败', 'BilibiliService', error);
       // 清理可能的残留文件
-      try { if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath); } catch { /* ignore */ }
+      try { if (fs.existsSync(downloadPath)) fs.unlinkSync(downloadPath); } catch { /* ignore */ }
       return null;
     }
   }
@@ -1131,7 +1453,7 @@ export class BilibiliService {
         throw new Error(
           'biliup 自动安装失败\n\n' +
           '请手动安装：\n' +
-          '   - Windows: winget install -e --id ForgQi.biliup-rs\n' +
+          '   - uv tool install biliup\n' +
           '   - 或访问: https://github.com/biliup/biliup/releases\n' +
           '安装后请【完全关闭并重新打开】应用程序'
         );
@@ -1155,11 +1477,12 @@ export class BilibiliService {
       if (!fs.existsSync(cookieFile)) {
         throw new Error('未登录B站，请先在设置中点击"扫码登录"');
       }
+      const cookieAuth = this.readCookieAuth(cookieFile);
 
       // 安全检查：确保Cookie文件权限正确（仅限当前用户读写）
       try {
         fs.chmodSync(cookieFile, 0o600); // rw------- (仅所有者可读写)
-      } catch (err) {
+      } catch {
         LogService.warn('无法设置Cookie文件权限（Windows系统可能不支持）', 'BilibiliService');
       }
 
@@ -1236,10 +1559,18 @@ export class BilibiliService {
         LogService.log(`使用模板生成简介: ${finalDesc.substring(0, 100)}...`, 'BilibiliService');
       }
 
+      // B站标题限制 80 字符
+      const rawTitle = options.metadata.title || '未命名视频';
+      const bilibiliTitle = rawTitle.length > 80 ? rawTitle.slice(0, 79) + '…' : rawTitle;
+      if (rawTitle.length > 80) {
+        LogService.warn(`标题超过80字符（${rawTitle.length}），已自动截断: ${bilibiliTitle}`, 'BilibiliService');
+      }
+
+      const metadataTags = options.metadata.tags ?? [];
       const finalMetadata = {
-        title: options.metadata.title || '未命名视频',
+        title: bilibiliTitle,
         tid: options.metadata.tid ?? config.defaultTid ?? 21,
-        tags: options.metadata.tags?.length > 0 ? options.metadata.tags : (config.defaultTags || []),
+        tags: metadataTags.length > 0 ? metadataTags : (config.defaultTags || []),
         desc: finalDesc || '',
         source: options.metadata.source || '',  // 使用传入的 source（来自 Notion LinkStart）
         cover: options.metadata.cover,  // 使用传入的 cover（来自 Notion 封面）
@@ -1324,7 +1655,7 @@ export class BilibiliService {
         args.push('--up-close-danmu');
       }
       
-      // 注意：biliup-rs 不支持真正的草稿模式
+      // 注意：biliup 不支持真正的草稿模式
       // 上传后会自动提交审核，无法保存为草稿
       args.push('--line', 'bda2'); // 使用 bda2 线路（百度云）
 
@@ -1385,7 +1716,7 @@ export class BilibiliService {
           }
         });
 
-        uploadProcess.on('close', (code) => {
+        uploadProcess.on('close', async (code) => {
           // 清理临时文件（保留缓存文件）
           videoFiles.forEach(file => {
             // 只删除非缓存文件（video_xxx.mp4），保留缓存文件（cached_xxx.mp4）
@@ -1414,6 +1745,17 @@ export class BilibiliService {
             LogService.success('========== 视频上传成功 ==========', 'BilibiliService');
             if (result.link) {
               LogService.log(`稿件链接: ${result.link}`, 'BilibiliService');
+            }
+
+            if (config.defaultSeasonId != null) {
+              try {
+                await this.addVideoToSeasonSection(cookieAuth, config.defaultSeasonId, result);
+                LogService.success(`已加入 B站合集分组: ${config.defaultSeasonId}`, 'BilibiliService');
+              } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                reject(new Error(`视频上传成功，但加入 B站合集失败: ${errorMsg}`));
+                return;
+              }
             }
 
             resolve(result);

@@ -1,37 +1,47 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { SyncState } from '../shared/types/sync';
+import { Config } from '../shared/types/config';
 
 // 定义 API 类型
 interface IElectronAPI {
-  getConfig: () => Promise<{
-    apiKey: string;
-    databaseId: string;
-  }>;
-  saveConfig: (config: {
-    apiKey: string;
-    databaseId: string;
-  }) => Promise<void>;
-  getNotionPages: () => Promise<any[]>;
+  ipcRenderer: {
+    invoke(channel: string, ...args: unknown[]): Promise<unknown>;
+    on(channel: string, func: (...args: unknown[]) => void): void;
+    removeListener(channel: string, func: (...args: unknown[]) => void): void;
+  };
+  getConfig: () => Promise<Config>;
+  saveConfig: (config: Config) => Promise<void>;
+  getNotionPages: () => Promise<unknown[]>;
   syncArticle: (pageId: string, publishMode?: 'publish' | 'draft') => Promise<SyncState>;
-  previewArticle: (pageId: string) => Promise<any>;
+  previewArticle: (pageId: string) => Promise<unknown>;
   getSyncStatus: (articleId: string) => Promise<SyncState>;
   cancelSync: (articleId: string) => Promise<boolean>;
   openNotionPage: (url: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   showNotification: (title: string, body: string) => Promise<void>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<void>;
+  closeWindow: () => Promise<void>;
   onSyncStateChanged: (callback: (state: SyncState) => void) => void;
+  testWechatConnection: (appId: string, appSecret: string) => Promise<void>;
+  testWordPressConnection: (siteUrl: string, username: string, appPassword: string) => Promise<void>;
 }
 
-// 暴露 API 到渲染进程
-contextBridge.exposeInMainWorld('electron', {
+const ipcListenerWrappers = new WeakMap<(...args: unknown[]) => void, (...args: unknown[]) => void>();
+
+const electronApi: IElectronAPI = {
   // IPC 通信
   ipcRenderer: {
-    invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
-    on: (channel: string, func: (...args: any[]) => void) => {
-      ipcRenderer.on(channel, (_, ...args) => func(...args));
+    invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+    on: (channel: string, func: (...args: unknown[]) => void) => {
+      const wrapper = (_event: unknown, ...args: unknown[]) => func(...args);
+      ipcListenerWrappers.set(func, wrapper);
+      ipcRenderer.on(channel, wrapper);
     },
-    removeListener: (channel: string, func: (...args: any[]) => void) => {
-      ipcRenderer.removeListener(channel, func);
+    removeListener: (channel: string, func: (...args: unknown[]) => void) => {
+      const wrapper = ipcListenerWrappers.get(func);
+      ipcRenderer.removeListener(channel, wrapper || func);
+      ipcListenerWrappers.delete(func);
     }
   },
   
@@ -43,6 +53,9 @@ contextBridge.exposeInMainWorld('electron', {
   getNotionPages: () => ipcRenderer.invoke('get-notion-pages'),
   openNotionPage: (url: string) => ipcRenderer.invoke('open-notion-url', url),
   openExternal: (url: string) => ipcRenderer.invoke('open-external-url', url),
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window-toggle-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
   
   // 同步相关
   syncArticle: (pageId, publishMode) => ipcRenderer.invoke('sync-article', pageId, publishMode),
@@ -57,4 +70,7 @@ contextBridge.exposeInMainWorld('electron', {
   // 测试连接
   testWechatConnection: (appId: string, appSecret: string) => ipcRenderer.invoke('test-wechat-connection', appId, appSecret),
   testWordPressConnection: (siteUrl: string, username: string, appPassword: string) => ipcRenderer.invoke('test-wordpress-connection', siteUrl, username, appPassword)
-}); 
+};
+
+// 暴露 API 到渲染进程
+contextBridge.exposeInMainWorld('electron', electronApi);

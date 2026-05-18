@@ -7,17 +7,30 @@ import { LogService } from './LogService';
 import { NotionPage, NotionBlock } from '../../shared/types/notion';
 import { WeChatArticle } from '../../shared/types/wechat';
 import { WordPressArticle } from '../../shared/types/wordpress';
-import { BilibiliVideo, BilibiliMetadata, BilibiliUploadOptions } from '../../shared/types/bilibili';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
-import { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 import { themes, ThemeStyles } from '../../shared/types/theme';
+import {
+  convertRichTextToHtml as convertRichTextToHtmlHelper,
+  cutWeChatTitle as cutWeChatTitleHelper,
+  escapeHtml as escapeHtmlHelper,
+  filterWeChatUnsupportedChars as filterWeChatUnsupportedCharsHelper,
+  SyncRichText,
+} from './sync/html';
+import {
+  extractImageUrls as extractImageUrlsHelper,
+  getCoverImageUrl as getCoverImageUrlHelper,
+} from './sync/images';
+import {
+  convertBlockToHtml as convertBlockToHtmlHelper,
+  convertBlocksToHtml as convertBlocksToHtmlHelper,
+} from './sync/notionToHtml';
+import { SyncStateStore } from './sync/stateStore';
+import { syncArticleToWeChat } from './sync/wechatSync';
+import { syncArticleToWordPressFlow } from './sync/wordpressSync';
+import { syncVideoToBilibiliFlow } from './sync/bilibiliSync';
 import { app } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
-
-interface RichText {
-  plain_text: string;
-}
 
 export class SyncService {
   private notionService: NotionService;
@@ -25,8 +38,7 @@ export class SyncService {
   private wordPressService: WordPressService | null = null;
   private bilibiliService: BilibiliService | null = null;
   private configService: ConfigService;
-  private syncStates: { [key: string]: SyncState } = {};
-  private syncStateFile: string;
+  private syncStateStore: SyncStateStore;
   // 跟踪正在进行的同步操作，用于取消
   private activeSyncControllers: Map<string, AbortController> = new Map();
 
@@ -42,8 +54,7 @@ export class SyncService {
     this.configService = configService;
     this.wordPressService = wordPressService || null;
     this.bilibiliService = bilibiliService || null;
-    this.syncStateFile = path.join(app.getPath('userData'), 'sync-states.json');
-    this.loadSyncStates();
+    this.syncStateStore = new SyncStateStore(path.join(app.getPath('userData'), 'sync-states.json'));
   }
 
   /**
@@ -80,25 +91,7 @@ export class SyncService {
    * 说明：微信图文标题限制为 64 字符（按字符数，非字节），与 WeChatService.cutTextForWeChat 一致
    */
   private cutWeChatTitle(rawTitle: string, maxChars: number = 64): string {
-    if (!rawTitle) return '';
-
-    // 先过滤不支持的特殊字符和emoji
-    const cleanedTitle = this.filterWeChatUnsupportedChars(rawTitle);
-
-    // 按字符数截断（中文、英文等均计为 1 字符）
-    const result = cleanedTitle.length <= maxChars
-      ? cleanedTitle
-      : cleanedTitle.substring(0, maxChars);
-
-    // 如果被截断或过滤，记录日志
-    if (result.length < rawTitle.length || cleanedTitle.length < rawTitle.length) {
-      LogService.warn(
-        `标题已处理。原始: "${rawTitle}"，处理后: "${result}"`,
-        'SyncService'
-      );
-    }
-
-    return result;
+    return cutWeChatTitleHelper(rawTitle, maxChars);
   }
 
   /**
@@ -106,41 +99,12 @@ export class SyncService {
    * 微信公众号标题不支持大部分emoji和特殊符号
    */
   private filterWeChatUnsupportedChars(text: string): string {
-    if (!text) return '';
-    
-    // 移除emoji（包括常见的表情符号）
-    // Unicode emoji 范围：
-    // - Basic Emoji: U+1F300–U+1F6FF
-    // - Supplemental Symbols: U+1F900–U+1F9FF
-    // - Emoticons: U+1F600–U+1F64F
-    // - Misc Symbols: U+2600–U+26FF
-    // - Dingbats: U+2700–U+27BF
-    // - Misc Symbols and Pictographs: U+1F300–U+1F5FF
-    // - Transport and Map: U+1F680–U+1F6FF
-    let filtered = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/gu, '');
-    
-    // 移除其他可能导致问题的特殊字符
-    // 保留：中文、英文、数字、常见标点符号
-    // 移除：控制字符、特殊符号等
-    filtered = filtered.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // 控制字符
-    
-    // 移除一些可能导致发布失败的特殊符号（根据实际情况调整）
-    filtered = filtered.replace(/[🎬🎥📺🎞️📹🎦🎭🎪🎨🎯🎲🎰🎳]/g, ''); // 常见的媒体相关emoji
-    
-    // 移除多余的空格
-    filtered = filtered.replace(/\s+/g, ' ').trim();
-    
-    return filtered;
+    return filterWeChatUnsupportedCharsHelper(text);
   }
 
   // 转义 HTML 特殊字符
   private escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return escapeHtmlHelper(text);
   }
 
   // 调整颜色亮度（用于创建渐变效果）
@@ -174,194 +138,46 @@ export class SyncService {
   }
 
   // 将 rich_text 数组转换为 HTML
-  private convertRichTextToHtml(richText: Array<{ plain_text: string; href?: string | null; annotations?: any }>, theme?: ThemeStyles): string {
-    if (richText.length === 0) {
-      return '';
-    }
-    const currentTheme = theme || this.getCurrentTheme();
-    
-    const parts: string[] = [];
-    
-    for (const text of richText) {
-      let content = this.escapeHtml(text.plain_text);
-      
-      // 如果有链接，用独立的块级div包裹（两行显示）
-      if (text.href) {
-        // 应用格式到链接文字
-        if (text.annotations?.bold) {
-          content = `<strong>${content}</strong>`;
-        }
-        if (text.annotations?.italic) {
-          content = `<em>${content}</em>`;
-        }
-        // 独立的链接块：第一行蓝色文字，第二行灰色URL
-        parts.push(`<span style="display: inline-block; margin: 0.3em 0; vertical-align: top;"><a href="${text.href}" style="color: #576b95; text-decoration: none; border-bottom: 1px solid #576b95; font-weight: 500; display: block;">${content}</a><span style="color: #999; font-size: 12px; display: block; margin-top: 0.2em; line-height: 1.4;">${text.href}</span></span>`);
-        continue;
-      }
-      
-      // 非链接文本的格式处理
-      if (text.annotations?.bold) {
-        content = `<strong>${content}</strong>`;
-      }
-      if (text.annotations?.italic) {
-        content = `<em>${content}</em>`;
-      }
-      if (text.annotations?.code) {
-        content = `<code style="background-color: #f5f5f5; padding: 3px 6px; border-radius: 3px; font-family: 'SF Mono', Consolas, Monaco, monospace; font-size: 0.9em; color: #d73a49;">${content}</code>`;
-      }
-      
-      parts.push(content);
-    }
-    
-    return parts.join('');
+  private convertRichTextToHtml(richText: SyncRichText[], _theme?: ThemeStyles): string {
+    return convertRichTextToHtmlHelper(richText);
   }
 
   // 获取封面图片 URL（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
   private getCoverImageUrl(page: NotionPage): string {
-    // 1. 优先使用页面的 cover 属性（Notion API 直接提供的封面）
-    if (page.cover) {
-      if (page.cover.type === 'external' && page.cover.external) {
-        return page.cover.external.url;
-      } else if (page.cover.type === 'file' && page.cover.file) {
-        const url = page.cover.file.url;
-        // 只在 Notion 临时 URL 时给出警告
-        if (url.includes('secure.notion-static.com') || url.includes('s3.us-west')) {
-          LogService.warn(`封面使用 Notion 临时 URL，可能会过期`, 'SyncService');
-        }
-        return url;
-      }
-    }
-
-    // 2. 查找 Cover 属性（自定义属性）
-    let coverProp = page.properties.Cover || page.properties['Cover'];
-    let propSource = 'Cover';
-    if (!coverProp) {
-      // 3. 如果没有 Cover，查找 MainImage
-      coverProp = page.properties.MainImage || page.properties['Main Image'];
-      propSource = 'MainImage';
-    }
-    
-    if (!coverProp) {
-      return '';
-    }
-    
-    // 处理不同类型的属性
-    if (coverProp.type === 'files' && Array.isArray(coverProp.files)) {
-      const firstFile = coverProp.files[0];
-      if (firstFile) {
-        if (firstFile.type === 'file' && firstFile.file) {
-          return firstFile.file.url;
-        } else if (firstFile.type === 'external' && firstFile.external) {
-          return firstFile.external.url;
-        }
-      }
-    } else if (coverProp.type === 'url' && coverProp.url) {
-      return coverProp.url;
-    } else if ((coverProp as any).url) {
-      return (coverProp as any).url;
-    } else if (coverProp.rich_text?.[0]?.plain_text) {
-      return coverProp.rich_text[0].plain_text;
-    }
-    
-    return '';
+    return getCoverImageUrlHelper(page);
   }
 
-  // 加载同步状态
-  private loadSyncStates() {
-    try {
-      if (fs.existsSync(this.syncStateFile)) {
-        const data = fs.readFileSync(this.syncStateFile, 'utf8');
-        this.syncStates = JSON.parse(data);
-        
-        const totalStates = Object.keys(this.syncStates).length;
-        console.log(`已加载 ${totalStates} 个同步状态`);
-        
-        // 启动时自动重置所有 SYNCING 状态为 FAILED（程序重启意味着之前的同步已中断）
-        let resetCount = 0;
-        for (const [articleId, state] of Object.entries(this.syncStates)) {
-          if (state.status === SyncStatus.SYNCING) {
-            this.syncStates[articleId] = {
-              ...state,
-              status: SyncStatus.FAILED,
-              error: '同步中断：程序重启',
-              lastSyncTime: Date.now()
-            };
-            resetCount++;
-          }
-        }
-        if (resetCount > 0) {
-          console.log(`已重置 ${resetCount} 个卡住的同步状态`);
-          this.saveSyncStates();
-        }
-      }
-    } catch (error) {
-      console.error('加载同步状态失败:', error);
-      this.syncStates = {};
-    }
-  }
-
-  // 保存同步状态
-  private saveSyncStates() {
-    try {
-      fs.writeFileSync(this.syncStateFile, JSON.stringify(this.syncStates, null, 2));
-      // 精简日志：只在开发模式下输出详细信息
-      if (process.env.NODE_ENV === 'development') {
-        console.log('同步状态已保存');
-      }
-    } catch (error) {
-      console.error('保存同步状态失败:', error);
-    }
-  }
-
-  // 更新同步状态
   private updateSyncState(articleId: string, status: SyncStatus, error?: string, results?: SyncState['results']): SyncState {
-    // 保留之前的 results，如果有新的 results 则合并
-    const existingState = this.syncStates[articleId];
-    const state: SyncState = {
-      articleId,
-      status,
-      lastSyncTime: Date.now(),
-      error,
-      results: results ? { ...existingState?.results, ...results } : existingState?.results
-    };
-    this.syncStates[articleId] = state;
-    this.saveSyncStates();
-    return state;
+    return this.syncStateStore.update(articleId, status, error, results);
   }
 
-  // 获取同步状态
   getSyncState(articleId: string): SyncState | undefined {
-    return this.syncStates[articleId];
+    return this.syncStateStore.get(articleId);
   }
 
-  // 获取所有同步状态
   getAllSyncStates(): { [key: string]: SyncState } {
-    return this.syncStates;
+    return this.syncStateStore.getAll();
   }
 
-  // 重置卡住的同步状态（如果同步时间超过3分钟，自动重置为失败）
   resetStuckSyncStates(): void {
-    const stuckTimeout = 3 * 60 * 1000; // 3分钟
-    const now = Date.now();
-    
-    for (const [articleId, state] of Object.entries(this.syncStates)) {
-      if (state.status === SyncStatus.SYNCING && state.lastSyncTime) {
-        const elapsed = now - state.lastSyncTime;
-        if (elapsed > stuckTimeout) {
-          LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
-          this.updateSyncState(articleId, SyncStatus.FAILED, '同步超时：操作时间过长，已自动重置');
-          // 清理可能残留的 controller
-          this.activeSyncControllers.delete(articleId);
-        }
-      }
+    const stuckTimeout = 3 * 60 * 1000;
+    const resetArticleIds = this.syncStateStore.resetStuck(stuckTimeout);
+
+    for (const articleId of resetArticleIds) {
+      LogService.warn(`检测到卡住的同步状态，文章ID: ${articleId}，已重置为失败`, 'SyncService');
+      this.activeSyncControllers.delete(articleId);
     }
   }
 
-  // 手动重置指定文章的同步状态
   resetSyncState(articleId: string): void {
     LogService.log(`手动重置文章同步状态: ${articleId}`, 'SyncService');
-    delete this.syncStates[articleId];
-    this.saveSyncStates();
+    this.syncStateStore.reset(articleId);
+  }
+
+  clearPlatformState(articleId: string, platform: 'wechat' | 'bilibili' | 'wordpress'): void {
+    const key = platform === 'bilibili' ? `bili_${articleId}` : platform === 'wordpress' ? `wp_${articleId}` : articleId;
+    LogService.log(`标记已解决：清除 ${platform} 同步状态 ${key}`, 'SyncService');
+    this.syncStateStore.reset(key);
   }
 
   async syncArticle(articleId: string, publishMode: 'publish' | 'draft' = 'publish'): Promise<SyncState> {
@@ -433,7 +249,7 @@ export class SyncService {
     }
     
     // 如果没有找到 controller，检查同步状态
-    const currentState = this.syncStates[articleId];
+    const currentState = this.syncStateStore.get(articleId);
     if (currentState && currentState.status === SyncStatus.SYNCING) {
       // 状态显示正在同步，但没有 controller，可能是状态不同步
       LogService.warn(`文章 ${articleId} 状态显示为同步中，但未找到对应的 controller，强制更新状态为已取消`, 'SyncService');
@@ -446,213 +262,30 @@ export class SyncService {
   }
 
   private async _syncArticleInternal(articleId: string, publishMode: 'publish' | 'draft' = 'publish', abortSignal?: AbortSignal): Promise<SyncState> {
-    try {
-      // 在开始前检查是否已取消
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-      
-      LogService.log('========== 开始同步文章 ==========', 'SyncService');
-      LogService.log(`文章ID: ${articleId}`, 'SyncService');
-      LogService.log(`发布模式: ${publishMode}`, 'SyncService');
-      this.updateSyncState(articleId, SyncStatus.SYNCING);
-      
-      // 再次检查是否已取消（在设置状态后）
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 验证服务是否初始化
-      if (!this.notionService || !this.weChatService) {
-        const error = '服务未初始化，请先保存正确的配置';
-        LogService.error(error, 'SyncService');
-        throw new Error(error);
-      }
-
-      // 获取 Notion 文章内容
-      LogService.log('正在获取文章属性...', 'SyncService');
-      let page;
-      try {
-        page = await this.notionService.getPageProperties(articleId);
-        LogService.log(`文章标题: ${page.title}`, 'SyncService');
-      } catch (error) {
-        const errorMsg = '获取文章属性失败，请检查 Notion API Key 和数据库 ID 是否正确';
-        LogService.error(errorMsg, 'SyncService');
-        LogService.error(error instanceof Error ? error.message : String(error), 'SyncService');
-        throw new Error(errorMsg);
-      }
-
-      if (!page || !page.properties) {
-        throw new Error('无法获取文章属性，请检查数据库 ID 是否正确');
-      }
-
-      // 记录文章属性信息（仅记录关键信息）
-      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
-      // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
-      let mainImage = this.getCoverImageUrl(page);
-      if (mainImage) {
-        LogService.log(`封面图片: ${mainImage.substring(0, 60)}...`, 'SyncService');
-      }
-
-      // 检查是否已取消
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取文章内容
-      LogService.log('正在获取文章内容...', 'SyncService');
-      let blocks;
-      try {
-        blocks = await this.notionService.getPageContent(articleId);
-        LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
-      } catch (error) {
-        const errorMsg = '获取文章内容失败，请检查文章权限设置';
-        LogService.error(errorMsg, 'SyncService');
-        LogService.error(error instanceof Error ? error.message : String(error), 'SyncService');
-        throw new Error(errorMsg);
-      }
-
-      if (!blocks || blocks.length === 0) {
-        throw new Error('文章内容为空');
-      }
-
-      // 转换文章格式
-      LogService.log('正在转换文章格式...', 'SyncService');
-      LogService.log(`需要转换的块数量: ${blocks.length}`, 'SyncService');
-      
-      // **新增：提取所有图片URL**
-      const imageUrls = this.extractImageUrls(blocks, mainImage);
-      LogService.log(`提取到 ${imageUrls.length} 张图片`, 'SyncService');
-      
-      // **新增：批量上传图片到微信素材库**
-      const imageUrlMap = new Map<string, string>(); // 原始URL -> 微信服务器URL
-      const failedImages: string[] = []; // 记录失败的图片
-      
-      if (imageUrls.length > 0) {
-        LogService.log(`开始上传 ${imageUrls.length} 张图片到微信素材库`, 'SyncService');
-        for (let i = 0; i < imageUrls.length; i++) {
-          if (abortSignal?.aborted) {
-            throw new Error('同步已取消');
-          }
-          
-          const imageUrl = imageUrls[i];
-          try {
-            // 只显示进度，不显示每张图片的详细URL
-            LogService.log(`上传进度: ${i + 1}/${imageUrls.length}`, 'SyncService');
-            const filename = `content_image_${i + 1}.png`;
-            const uploadResult = await this.weChatService.uploadImage(imageUrl, abortSignal, filename);
-            
-            if (uploadResult.url) {
-              imageUrlMap.set(imageUrl, uploadResult.url);
-            } else {
-              failedImages.push(imageUrl);
-            }
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            LogService.warn(`图片 ${i + 1} 上传失败: ${errorMsg}`, 'SyncService');
-            failedImages.push(imageUrl);
-          }
-        }
-        
-        LogService.success(`图片上传完成: ${imageUrlMap.size}/${imageUrls.length} 成功`, 'SyncService');
-        
-        // 如果有失败的图片，给出简要提示
-        if (failedImages.length > 0) {
-          LogService.warn(`${failedImages.length} 张图片上传失败，建议检查图片URL是否可访问`, 'SyncService');
-        }
-      }
-      
-      // 使用之前已经获取的 linkStart 和 mainImage，以及图片URL映射
-      const weChatArticle = this.convertToWeChatArticle(page, blocks, mainImage, linkStart, imageUrlMap);
-      LogService.log(`转换完成，标题: ${weChatArticle.title}`, 'SyncService');
-      LogService.log(`内容长度: ${weChatArticle.content.length} 字符`, 'SyncService');
-      LogService.log(`原文链接: ${weChatArticle.contentSourceUrl || '无'}`, 'SyncService');
-      
-      // 如果内容为空，记录详细信息
-      if (!weChatArticle.content || weChatArticle.content.trim().length === 0) {
-        LogService.warn('警告：转换后的内容为空', 'SyncService');
-        LogService.warn(`块详情: ${JSON.stringify(blocks.map(b => ({ type: b.type, has_children: b.has_children, content_keys: Object.keys(b.content || {}) })))}`, 'SyncService');
-      }
-
-      if (!weChatArticle.title) {
-        throw new Error('文章标题不能为空');
-      }
-
-      // 检查内容是否为空（去除 HTML 标签后）
-      const contentWithoutTags = weChatArticle.content.replace(/<[^>]*>/g, '').trim();
-      if (!contentWithoutTags) {
-        LogService.warn('文章内容为空，但可能包含媒体内容（视频、文件等）', 'SyncService');
-        // 如果内容为空但有块，说明可能是纯媒体内容，添加提示
-        if (blocks.length > 0) {
-          const blockTypes = blocks.map(b => b.type).join(', ');
-          LogService.warn(`块类型: ${blockTypes}`, 'SyncService');
-          // 对于纯媒体内容，添加一个提示文本
-          weChatArticle.content = '<p>本文包含媒体内容，请查看原文链接。</p>' + weChatArticle.content;
-        } else {
-          throw new Error('文章内容不能为空');
-        }
-      }
-
-      // 发布到微信公众号
-      LogService.log(`========== 开始${publishMode === 'publish' ? '发布' : '保存草稿'}到微信公众号 ==========`, 'SyncService');
-      LogService.log(`文章标题: ${weChatArticle.title}`, 'SyncService');
-      LogService.log(`文章作者: ${weChatArticle.author || '未设置'}`, 'SyncService');
-      LogService.log(`文章摘要: ${weChatArticle.digest || '未设置'}`, 'SyncService');
-      
-      try {
-        await this.weChatService.publishArticle(weChatArticle, publishMode, abortSignal);
-        LogService.success(`========== 文章${publishMode === 'publish' ? '发布' : '保存草稿'}成功 ==========`, 'SyncService');
-      } catch (error) {
-        LogService.error(`========== ${publishMode === 'publish' ? '发布' : '保存草稿'}到微信失败 ==========`, 'SyncService');
-        // 保留原始错误信息
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        LogService.error(`错误: ${errorMessage}`, 'SyncService');
-        throw new Error(`${publishMode === 'publish' ? '发布' : '保存草稿'}到微信失败: ${errorMessage}`);
-      }
-
-      // 更新 Notion 中的添加时间（如果需要）
-      try {
-        const currentAddedTime = page.properties.AddedTime?.date?.start;
-        if (!currentAddedTime) {
-          await this.notionService.updatePageProperties(articleId, {
-            AddedTime: {
-              date: {
-                start: new Date().toISOString()
-              }
-            }
-          });
-        }
-      } catch (error) {
-        console.error('更新 Notion 时间失败:', error);
-        // 不抛出错误，因为文章已经发布成功
-      }
-
-      const successState = this.updateSyncState(articleId, SyncStatus.SUCCESS);
-      LogService.success('========== 同步完成，状态: 成功 ==========', 'SyncService');
-      return successState;
-    } catch (error) {
-      LogService.error('========== 同步文章失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      if (error instanceof Error && error.stack) {
-        LogService.error(`堆栈: ${error.stack}`, 'SyncService');
-      }
-      const failedState = this.updateSyncState(articleId, SyncStatus.FAILED, errorMessage);
-      LogService.log('========== 同步完成，状态: 失败 ==========', 'SyncService');
-      return failedState;
-    }
+    return syncArticleToWeChat(
+      {
+        notionService: this.notionService,
+        weChatService: this.weChatService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        extractImageUrls: (blocks, coverImageUrl) => this.extractImageUrls(blocks, coverImageUrl),
+        convertToWeChatArticle: (page, blocks, mainImageUrl, linkStart, imageUrlMap) =>
+          this.convertToWeChatArticle(page, blocks, mainImageUrl, linkStart, imageUrlMap),
+        updateSyncState: (id, status, error, results) => this.updateSyncState(id, status, error, results),
+      },
+      articleId,
+      publishMode,
+      abortSignal
+    );
   }
 
   convertToWeChatArticleForPreview(
     page: NotionPage,
     blocks: NotionBlock[]
   ): WeChatArticle {
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
     
     // 获取封面图片（优先使用页面 cover，然后 Cover 属性，最后 MainImage）
-    let mainImage = this.getCoverImageUrl(page);
+    const mainImage = this.getCoverImageUrl(page);
     
     return this.convertToWeChatArticle(page, blocks, mainImage, linkStart);
   }
@@ -660,20 +293,8 @@ export class SyncService {
   /**
    * 从blocks中提取所有图片URL（不包括封面图，封面图会单独上传）
    */
-  private extractImageUrls(blocks: NotionBlock[], coverImageUrl?: string): string[] {
-    const urls = new Set<string>();
-    
-    // 不添加封面图到这里，因为封面图会在 publishArticle 时单独上传
-    // 这样可以避免重复上传封面图
-    
-    // 遍历blocks提取图片URL
-    for (const block of blocks) {
-      if (block.type === 'image' && block.content?.url) {
-        urls.add(block.content.url);
-      }
-    }
-    
-    return Array.from(urls);
+  private extractImageUrls(blocks: NotionBlock[], _coverImageUrl?: string): string[] {
+    return extractImageUrlsHelper(blocks, _coverImageUrl);
   }
 
   /**
@@ -738,13 +359,11 @@ export class SyncService {
       articleContent +
       '</section>';
 
-    const authorProperty = page.properties.Author;
-    const fromProperty = page.properties.From;
     // 使用 From 作为摘要，如果没有则使用标题
-    const digest = fromProperty?.rich_text?.[0]?.plain_text || page.title;
+    const digest = page.from || page.title;
 
     // 获取配置中的作者，如果配置中没有则从文章属性获取
-    const author = wechatConfig.author || authorProperty?.rich_text?.[0]?.plain_text || '';
+    const author = wechatConfig.author || page.author || '';
 
     // 应用标题模板（如果配置了）
     let finalTitle = page.title;
@@ -791,28 +410,32 @@ export class SyncService {
     }
     
     // LinkStart
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
     if (linkStart) {
       infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>链接</strong></td><td style="padding: 4px 8px; color: #333;"><span style="display: inline-block; padding: 2px 6px; background-color: #e6f2ff; border: 1px solid #1890ff; border-radius: 3px; box-sizing: border-box;"><a href="${linkStart}" style="color: #1890ff; text-decoration: none; font-weight: 500; box-sizing: border-box;">${this.escapeHtml(linkStart)}</a></span></td></tr>`);
     }
     
     // From
-    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
+    const from = page.from || page.properties.From?.rich_text?.[0]?.plain_text || '';
     if (from) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>来源</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>来源平台</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
     }
     
     // Author
-    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+    const author = page.author || page.properties.Author?.rich_text?.[0]?.plain_text || '';
     if (author) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>作者</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>原作者</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
     }
     
     // FeatureTag
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     if (featureTag) {
       let tagValue = '';
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagValue = featureTag.join(', ');
+      } else if (typeof featureTag === 'string') {
+        tagValue = featureTag;
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagValue = featureTag.select.name;
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagValue = featureTag.multi_select.map((tag: any) => tag.name).join(', ');
@@ -823,13 +446,13 @@ export class SyncService {
     }
     
     // ExpectationsRate - 显示为 X/10 格式
-    const expectationsRate = page.properties.ExpectationsRate?.number;
+    const expectationsRate = page.expectationsRate ?? page.properties.ExpectationsRate?.number;
     if (expectationsRate !== undefined && expectationsRate !== null) {
-      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>个人期望</strong></td><td style="padding: 4px 8px; color: #333;">${expectationsRate}/10</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>个人期待值</strong></td><td style="padding: 4px 8px; color: #333;">${expectationsRate}/10</td></tr>`);
     }
     
     // Engine
-    const engine = page.properties.Engine?.select?.name || '';
+    const engine = page.engine || page.properties.Engine?.select?.name || '';
     if (engine) {
       infoRows.push(`<tr><td style="padding: 4px 8px; vertical-align: top; width: 80px; color: #666;"><strong>使用引擎</strong></td><td style="padding: 4px 8px; color: #333;">${this.escapeHtml(engine)}</td></tr>`);
     }
@@ -882,372 +505,11 @@ export class SyncService {
   // 将块数组转换为HTML，处理列表项的分组
   // forWeChat: 是否为微信公众号生成HTML（微信不支持iframe和video标签）
   private convertBlocksToHtml(blocks: NotionBlock[], imageUrlMap?: Map<string, string>, forWeChat: boolean = true): string {
-    const htmlParts: string[] = [];
-    let currentList: { type: 'bulleted' | 'numbered'; items: string[] } | null = null;
-    const theme = this.getCurrentTheme();
-
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      const html = this.convertBlockToHtml(block, imageUrlMap, theme, forWeChat);
-
-      // 处理列表项
-      if (block.type === 'bulleted_list_item') {
-        if (!currentList || currentList.type !== 'bulleted') {
-          // 结束上一个列表
-          if (currentList) {
-            htmlParts.push(currentList.type === 'bulleted' ? `<ul style="margin: 1em 0; padding-left: 2em; list-style-type: disc;">${currentList.items.join('')}</ul>` : `<ol style="margin: 1em 0; padding-left: 2em;">${currentList.items.join('')}</ol>`);
-          }
-          // 开始新列表
-          currentList = { type: 'bulleted', items: [] };
-        }
-        currentList.items.push(html);
-      } else if (block.type === 'numbered_list_item') {
-        if (!currentList || currentList.type !== 'numbered') {
-          // 结束上一个列表
-          if (currentList) {
-            htmlParts.push(currentList.type === 'bulleted' ? `<ul style="margin: 1em 0; padding-left: 2em; list-style-type: disc;">${currentList.items.join('')}</ul>` : `<ol style="margin: 1em 0; padding-left: 2em;">${currentList.items.join('')}</ol>`);
-          }
-          // 开始新列表
-          currentList = { type: 'numbered', items: [] };
-        }
-        currentList.items.push(html);
-      } else {
-        // 非列表项，结束当前列表
-        if (currentList) {
-          htmlParts.push(currentList.type === 'bulleted' ? `<ul style="margin: 1em 0; padding-left: 2em; list-style-type: disc;">${currentList.items.join('')}</ul>` : `<ol style="margin: 1em 0; padding-left: 2em;">${currentList.items.join('')}</ol>`);
-          currentList = null;
-        }
-        if (html.trim() !== '') {
-          htmlParts.push(html);
-        }
-      }
-    }
-
-    // 处理最后一个列表
-    if (currentList) {
-      htmlParts.push(currentList.type === 'bulleted' ? `<ul style="margin: 1em 0; padding-left: 2em; list-style-type: disc;">${currentList.items.join('')}</ul>` : `<ol style="margin: 1em 0; padding-left: 2em;">${currentList.items.join('')}</ol>`);
-    }
-
-    return htmlParts.join('\n\n');
+    return convertBlocksToHtmlHelper(blocks, imageUrlMap, forWeChat, this.getCurrentTheme());
   }
 
   private convertBlockToHtml(block: NotionBlock, imageUrlMap?: Map<string, string>, theme?: ThemeStyles, forWeChat: boolean = true): string {
-    const currentTheme = theme || this.getCurrentTheme();
-    
-    // 处理不同类型的块
-    switch (block.type) {
-      case 'paragraph': {
-        const richText = block.content?.rich_text || [];
-        if (richText.length === 0) {
-          return `<p style="margin: 1em 0; line-height: 1.8;">&nbsp;</p>`;
-        }
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<p style="margin: 1em 0; line-height: 1.8; letter-spacing: 0.5px; color: #333; font-size: 15px;">${htmlContent}</p>`;
-      }
-      case 'heading_1': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<h1 style="margin: 1.5em 0 0.8em 0; padding: 0.5em 0 0.5em 0.8em; font-size: 1.75em; font-weight: 700; line-height: 1.3; color: #2c3e50; border-left: 6px solid #3498db; background: linear-gradient(to right, #ebf5fb 0%, transparent 100%);">${htmlContent}</h1>`;
-      }
-      case 'heading_2': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<h2 style="margin: 1.3em 0 0.7em 0; padding-left: 0.6em; font-size: 1.4em; font-weight: 600; line-height: 1.4; color: #34495e; border-left: 4px solid #3498db;">${htmlContent}</h2>`;
-      }
-      case 'heading_3': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<h3 style="margin: 1.1em 0 0.6em 0; font-size: 1.2em; font-weight: 600; line-height: 1.4; color: #555; padding-left: 0.4em; border-left: 3px solid #95a5a6;">${htmlContent}</h3>`;
-      }
-      case 'image': {
-        let url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        
-        // **使用微信服务器URL替换原始URL**
-        if (url && imageUrlMap && imageUrlMap.has(url)) {
-          url = imageUrlMap.get(url)!;
-        }
-        
-        if (url) {
-          // 转义URL中的特殊字符
-          const escapedUrl = this.escapeHtml(url);
-          // 如果有标题，在图片下方显示
-          if (caption) {
-            return `<figure style="margin: 2em 0; text-align: center;"><img src="${escapedUrl}" alt="${this.escapeHtml(caption)}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: block; margin: 0 auto;" /><figcaption style="margin-top: 1em; padding: 0.5em 1em; font-size: 14px; color: #7f8c8d; background-color: #f8f9fa; border-radius: 4px; display: inline-block;">${this.escapeHtml(caption)}</figcaption></figure>`;
-          } else {
-            return `<p style="text-align: center; margin: 2em 0;"><img src="${escapedUrl}" alt="图片" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: inline-block;" /></p>`;
-          }
-        }
-        // 如果没有URL但有标题，至少显示标题
-        if (caption) {
-          LogService.warn(`图片块没有URL，仅显示标题: ${caption}`, 'SyncService');
-          return `<p style="margin: 1em 0; line-height: 1.8; text-align: center; color: #999; font-size: 0.9em;"><em>${this.escapeHtml(caption)}</em></p>`;
-        }
-        // 如果既没有URL也没有标题，记录警告
-        LogService.warn('图片块既没有URL也没有标题', 'SyncService');
-        return '';
-      }
-      case 'video': {
-        const url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        
-        if (url) {
-          // 微信公众号不支持 iframe 和 video 标签，使用简洁的链接卡片样式
-          if (forWeChat) {
-            // 提取视频平台信息
-            let platformName = '视频';
-            let platformIcon = '▶️';
-            
-            if (url.includes('youtube.com') || url.includes('youtu.be')) {
-              platformName = 'YouTube';
-              platformIcon = '▶️';
-            } else if (url.includes('bilibili.com')) {
-              platformName = '哔哩哔哩';
-              platformIcon = '▶️';
-            } else if (url.includes('vimeo.com')) {
-              platformName = 'Vimeo';
-              platformIcon = '▶️';
-            } else if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)) {
-              platformName = '视频';
-              platformIcon = '▶️';
-            }
-            
-            // 创建简洁的视频链接卡片
-            const displayText = caption || platformName;
-            return `<section style="margin: 1.5em 0; padding: 16px 20px; background: #f8f9fa; border-left: 4px solid #576b95; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-  <div style="display: flex; align-items: flex-start; gap: 12px;">
-    <span style="font-size: 24px; flex-shrink: 0; margin-top: 2px;">${platformIcon}</span>
-    <div style="flex: 1; min-width: 0;">
-      <div style="font-size: 15px; font-weight: 500; color: #333; margin-bottom: 8px; line-height: 1.4;">
-        ${this.escapeHtml(displayText)}
-      </div>
-      <div style="font-size: 13px; color: #576b95; word-break: break-all; line-height: 1.5;">
-        ${this.escapeHtml(url)}
-      </div>
-    </div>
-  </div>
-</section>`;
-          }
-          
-          // WordPress 等其他平台：保持原有的 iframe/video 嵌入逻辑
-          let videoHtml = '';
-          
-          // YouTube 视频检测
-          const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-          if (youtubeMatch) {
-            const videoId = youtubeMatch[1];
-            videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
-              <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
-                src="https://www.youtube.com/embed/${videoId}" 
-                frameborder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowfullscreen>
-              </iframe>
-            </div>`;
-          }
-          // Vimeo 视频检测
-          else if (url.includes('vimeo.com')) {
-            const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-            if (vimeoMatch) {
-              const videoId = vimeoMatch[1];
-              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
-                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
-                  src="https://player.vimeo.com/video/${videoId}" 
-                  frameborder="0" 
-                  allow="autoplay; fullscreen; picture-in-picture" 
-                  allowfullscreen>
-                </iframe>
-              </div>`;
-            }
-          }
-          // Bilibili 视频检测
-          else if (url.includes('bilibili.com')) {
-            const bvMatch = url.match(/BV[a-zA-Z0-9]+/);
-            const avMatch = url.match(/av(\d+)/);
-            if (bvMatch) {
-              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
-                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
-                  src="https://player.bilibili.com/player.html?bvid=${bvMatch[0]}&page=1" 
-                  scrolling="no" 
-                  border="0" 
-                  frameborder="no" 
-                  framespacing="0" 
-                  allowfullscreen="true">
-                </iframe>
-              </div>`;
-            } else if (avMatch) {
-              videoHtml = `<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; margin: 1.5em 0;">
-                <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
-                  src="https://player.bilibili.com/player.html?aid=${avMatch[1]}&page=1" 
-                  scrolling="no" 
-                  border="0" 
-                  frameborder="no" 
-                  framespacing="0" 
-                  allowfullscreen="true">
-                </iframe>
-              </div>`;
-            }
-          }
-          // 通用视频文件（mp4, webm, ogg 等）
-          else if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)) {
-            videoHtml = `<div style="margin: 1.5em 0; text-align: center;">
-              <video controls style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                <source src="${this.escapeHtml(url)}" type="video/${url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)?.[1] || 'mp4'}">
-                您的浏览器不支持 HTML5 视频播放。
-                <a href="${this.escapeHtml(url)}" style="color: #0073aa;">下载视频</a>
-              </video>
-            </div>`;
-          }
-          // 如果无法识别视频类型，使用 WordPress 的 [video] 短代码
-          else {
-            videoHtml = `<p style="margin: 1.2em 0; padding: 1em; background-color: #f0f7ff; border-left: 4px solid #1890ff; border-radius: 4px;">
-              [video src="${this.escapeHtml(url)}"]
-            </p>`;
-          }
-          
-          // 添加标题（如果有）
-          if (caption) {
-            return `<div style="margin: 1.5em 0;">
-              ${videoHtml}
-              <p style="text-align: center; margin-top: 0.8em; color: #666; font-size: 14px;">🎬 ${this.escapeHtml(caption)}</p>
-            </div>`;
-          }
-          
-          return videoHtml;
-        } else {
-          const captionText = caption || '视频内容';
-          return `<p style="margin: 1em 0; padding: 1em; background-color: #f7f7f7; border-radius: 6px; color: #666; text-align: center;">[视频: ${this.escapeHtml(captionText)}]</p>`;
-        }
-      }
-      case 'file': {
-        const url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        if (url) {
-          return `<p style="margin: 1.2em 0; padding: 0.8em 1em; background-color: #f0f7ff; border-left: 4px solid #1890ff; border-radius: 4px;"><a href="${url}" style="color: #1890ff; text-decoration: none; font-weight: 500;">📎 ${this.escapeHtml(caption || '文件下载')}</a></p>`;
-        }
-        return '';
-      }
-      case 'pdf': {
-        const url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        if (url) {
-          return `<p style="margin: 1.2em 0; padding: 0.8em 1em; background-color: #fff3e0; border-left: 4px solid #ff9800; border-radius: 4px;"><a href="${url}" style="color: #ff6f00; text-decoration: none; font-weight: 500;">📄 ${this.escapeHtml(caption || 'PDF 文档')}</a></p>`;
-        }
-        return '';
-      }
-      case 'embed': {
-        const url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        if (url) {
-          // 确保 URL 是可访问的
-          let actualUrl = url;
-          if (url.includes('youtube-nocookie.com/embed/') || url.includes('youtube.com/embed/')) {
-            const videoIdMatch = url.match(/embed\/([^?]+)/);
-            if (videoIdMatch) {
-              actualUrl = `https://www.youtube.com/watch?v=${videoIdMatch[1]}`;
-            }
-          }
-          
-          // 简化为卡片样式
-          if (caption) {
-            return `<div style="margin: 1.5em 0; padding: 1.2em; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"><p style="margin: 0 0 0.8em 0; font-weight: 600; color: #fff; font-size: 1.05em;">📌 ${this.escapeHtml(caption)}</p><p style="margin: 0;"><a href="${actualUrl}" style="color: #fff; text-decoration: none; background-color: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 4px; display: inline-block; font-size: 14px;">查看内容 →</a></p></div>`;
-          } else {
-            return `<p style="margin: 1.2em 0; padding: 0.8em 1em; background-color: #f0f7ff; border-left: 4px solid #1890ff; border-radius: 4px;"><a href="${actualUrl}" style="color: #1890ff; text-decoration: none; font-weight: 500;">🔗 ${actualUrl}</a></p>`;
-          }
-        }
-        return caption ? `<p style="margin: 1em 0; line-height: 1.8;">${this.escapeHtml(caption)}</p>` : '';
-      }
-      case 'bookmark': {
-        const url = block.content?.url || '';
-        const caption = block.content?.caption?.[0]?.plain_text || '';
-        if (url) {
-          return `<p style="margin: 1.2em 0; padding: 0.8em 1em; background-color: #fff9e6; border-left: 4px solid #faad14; border-radius: 4px;"><a href="${url}" style="color: #d48806; text-decoration: none; font-weight: 500;">🔖 ${this.escapeHtml(caption || url)}</a></p>`;
-        }
-        return '';
-      }
-      case 'link_preview': {
-        const url = block.content?.url || '';
-        if (url) {
-          return `<p style="margin: 1.2em 0; padding: 0.8em 1em; background-color: #f0f7ff; border-left: 4px solid #1890ff; border-radius: 4px;"><a href="${url}" style="color: #1890ff; text-decoration: none; font-weight: 500;">🔗 ${url}</a></p>`;
-        }
-        return '';
-      }
-      case 'bulleted_list_item': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<li style="margin: 0.5em 0; line-height: 1.8; color: #555;">${htmlContent}</li>`;
-      }
-      case 'numbered_list_item': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<li style="margin: 0.5em 0; line-height: 1.8; color: #555;">${htmlContent}</li>`;
-      }
-      case 'quote': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        return `<blockquote style="margin: 1.2em 0; padding: 1em 1.2em; background-color: #fef9e7; border-left: 4px solid #f39c12; border-radius: 4px; color: #7f8c8d; font-style: italic; line-height: 1.8; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">${htmlContent}</blockquote>`;
-      }
-      case 'code': {
-        const richText = block.content?.rich_text || [];
-        const textContent = richText.map(text => text.plain_text).join('');
-        const language = (block.content as any)?.language || '';
-        
-        // 转义 HTML 特殊字符
-        const escapedContent = textContent
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-        
-        // 带行号的代码块样式（参考微信公众号常见样式）
-        const lines = escapedContent.split('\n');
-        const lineNumberHtml = lines.map((_, i) => `<li style="list-style: none; padding: 0 10px 0 0; margin: 0; color: #999; user-select: none; text-align: right; min-width: 30px;">${i + 1}</li>`).join('');
-        const codeHtml = lines.map(line => `<code style="display: block; padding: 0; margin: 0;">${line || ' '}</code>`).join('');
-        
-        return `<section style="margin: 16px 0; background: #f6f8fa; border-radius: 6px; overflow: hidden; font-size: 14px; border: 1px solid #e1e4e8;">
-${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; font-size: 12px; border-bottom: 1px solid #e1e4e8; font-family: Consolas, Monaco, monospace;">${this.escapeHtml(language)}</div>` : ''}
-<div style="display: flex; overflow-x: auto;">
-<ul style="margin: 0; padding: 10px 0; list-style: none; background: #f0f0f0; border-right: 1px solid #e1e4e8;">${lineNumberHtml}</ul>
-<pre style="margin: 0; padding: 10px 12px; flex: 1; overflow-x: auto; font-family: Consolas, Monaco, 'Courier New', monospace; line-height: 1.6; color: #24292e; white-space: pre;"><code style="font-family: inherit;">${codeHtml}</code></pre>
-</div>
-        </section>`;
-      }
-      case 'divider':
-        return '<hr style="margin: 2em 0; border: 0; height: 1px; background: linear-gradient(to right, transparent, #cbd5e0, transparent);" />';
-      case 'to_do': {
-        const richText = block.content?.rich_text || [];
-        const htmlContent = this.convertRichTextToHtml(richText, currentTheme);
-        const checked = (block.content as any)?.checked || false;
-        
-        const checkboxStyle = checked 
-          ? `background-color: #e8f5e9; border-left: 3px solid #4caf50;`
-          : `background-color: #fff3e0; border-left: 3px solid #ff9800;`;
-        
-        const checkboxIcon = checked ? '✓' : '○';
-        const iconColor = checked ? '#4caf50' : '#ff9800';
-        
-        return `<div style="margin: 0.8em 0; padding: 0.8em 1em; ${checkboxStyle} border-radius: 4px; display: flex; align-items: flex-start;">
-          <span style="display: inline-block; width: 20px; height: 20px; margin-right: 0.8em; text-align: center; line-height: 20px; font-size: 14px; font-weight: bold; flex-shrink: 0; color: ${iconColor};">${checkboxIcon}</span>
-          <span style="${checked ? 'text-decoration: line-through; color: #999;' : 'color: #555;'} line-height: 1.6;">${htmlContent}</span>
-        </div>`;
-      }
-      default: {
-        // 对于未知类型，尝试提取文本内容
-        const richText = block.content?.rich_text || [];
-        if (richText.length > 0) {
-          const textContent = richText.map(text => text.plain_text).join('');
-          if (textContent.trim()) {
-            return `<p>${textContent}</p>`;
-          }
-        }
-        // 如果块有子块但没有内容，返回提示
-        if (block.has_children) {
-          return `<p>[包含子内容的 ${block.type} 块，需要递归处理]</p>`;
-        }
-        return '';
-      }
-    }
+    return convertBlockToHtmlHelper(block, imageUrlMap, theme || this.getCurrentTheme(), forWeChat);
   }
 
   // ==================== WordPress 同步方法 ====================
@@ -1305,119 +567,19 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     status: 'publish' | 'draft',
     abortSignal?: AbortSignal
   ): Promise<SyncState> {
-    const wpSyncKey = `wp_${articleId}`;
-    
-    try {
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      LogService.log('========== 开始同步文章到 WordPress ==========', 'SyncService');
-      LogService.log(`文章ID: ${articleId}`, 'SyncService');
-      LogService.log(`发布状态: ${status}`, 'SyncService');
-      this.updateSyncState(wpSyncKey, SyncStatus.SYNCING);
-
-      // 验证服务是否初始化
-      if (!this.notionService) {
-        throw new Error('Notion 服务未初始化');
-      }
-      if (!this.wordPressService) {
-        throw new Error('WordPress 服务未初始化，请先配置 WordPress 信息');
-      }
-
-      // 获取 Notion 文章内容
-      LogService.log('正在获取文章属性...', 'SyncService');
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取文章内容
-      LogService.log('正在获取文章内容...', 'SyncService');
-      const blocks = await this.notionService.getPageContent(articleId);
-      LogService.log(`文章内容块数量: ${blocks.length}`, 'SyncService');
-
-      if (!blocks || blocks.length === 0) {
-        throw new Error('文章内容为空');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 获取封面图片
-      const mainImage = this.getCoverImageUrl(page);
-      LogService.log(`========== WordPress 封面图片处理 ==========`, 'SyncService');
-      if (mainImage) {
-        LogService.log(`找到封面图片 URL: ${mainImage.substring(0, 80)}...`, 'SyncService');
-      } else {
-        LogService.warn(`未找到封面图片！请检查 Notion 页面是否设置了封面（Cover）`, 'SyncService');
-        LogService.warn(`支持的封面来源：1. 页面封面 2. Cover 属性 3. MainImage 属性`, 'SyncService');
-      }
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 只上传封面图作为 WordPress 特色图片，文章内容使用外部图片链接
-      let featuredMediaId: number | undefined;
-      if (mainImage && this.wordPressService) {
-        try {
-          LogService.log('正在上传封面图片到 WordPress 媒体库...', 'SyncService');
-          LogService.log(`图片 URL: ${mainImage}`, 'SyncService');
-          const coverMedia = await this.wordPressService.uploadMedia(mainImage, undefined, abortSignal);
-          if (coverMedia && coverMedia.id) {
-            featuredMediaId = coverMedia.id;
-            LogService.success(`✓ 封面图片上传成功！`, 'SyncService');
-            LogService.success(`  media_id: ${coverMedia.id}`, 'SyncService');
-            LogService.success(`  source_url: ${coverMedia.source_url || '未返回'}`, 'SyncService');
-          } else {
-            LogService.error(`✗ 封面图片上传异常：API 返回数据缺少 id`, 'SyncService');
-            LogService.error(`  返回数据: ${JSON.stringify(coverMedia)}`, 'SyncService');
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          LogService.error(`✗ 封面图片上传失败: ${errorMsg}`, 'SyncService');
-          LogService.warn('文章将不设置特色图片（featured image）', 'SyncService');
-          // 如果是 Notion 临时 URL 过期，给出提示
-          if (mainImage.includes('secure.notion-static.com') || mainImage.includes('s3.us-west')) {
-            LogService.warn('提示：Notion 文件类型的图片 URL 有时效性，建议使用外部图片链接', 'SyncService');
-          }
-        }
-      } else if (!mainImage) {
-        LogService.warn('文章没有封面图片，将使用 WordPress 默认特色图片', 'SyncService');
-      }
-      
-      LogService.log(`featuredMediaId 最终值: ${featuredMediaId || '未设置'}`, 'SyncService');
-
-      if (abortSignal?.aborted) {
-        throw new Error('同步已取消');
-      }
-
-      // 转换文章格式（文章内图片直接使用外部 URL，不上传）
-      LogService.log('正在转换文章格式...', 'SyncService');
-      const wpArticle = this.convertToWordPressArticle(page, blocks, status, undefined, featuredMediaId);
-      LogService.log(`转换完成，标题: ${wpArticle.title}`, 'SyncService');
-      LogService.log(`文章 featured_media 字段: ${wpArticle.featured_media || '未设置'}`, 'SyncService');
-
-      // 发布到 WordPress
-      LogService.log(`========== 开始${status === 'publish' ? '发布' : '保存草稿'}到 WordPress ==========`, 'SyncService');
-      const post = await this.wordPressService.publishArticle(wpArticle, abortSignal);
-      
-      LogService.success(`========== WordPress ${status === 'publish' ? '发布' : '草稿保存'}成功 ==========`, 'SyncService');
-      LogService.log(`文章链接: ${post.link}`, 'SyncService');
-
-      const successState = this.updateSyncState(wpSyncKey, SyncStatus.SUCCESS);
-      return successState;
-    } catch (error) {
-      LogService.error('========== WordPress 同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      const failedState = this.updateSyncState(wpSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncArticleToWordPressFlow(
+      {
+        notionService: this.notionService,
+        wordPressService: this.wordPressService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        convertToWordPressArticle: (page, blocks, wpStatus, imageUrlMap, featuredMediaId) =>
+          this.convertToWordPressArticle(page, blocks, wpStatus, imageUrlMap, featuredMediaId),
+        updateSyncState: (id, syncStatus, error, results) => this.updateSyncState(id, syncStatus, error, results),
+      },
+      articleId,
+      status,
+      abortSignal
+    );
   }
 
   /**
@@ -1467,9 +629,9 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     let articleContent = this.convertBlocksToHtml(blocks, imageUrlMap, false);
 
     // 获取文章属性
-    const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-    const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-    const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
+    const linkStart = page.linkStart || page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
+    const from = page.from || page.properties.From?.rich_text?.[0]?.plain_text || '';
+    const author = page.author || page.properties.Author?.rich_text?.[0]?.plain_text || '';
 
     // 构建文章头部（顶部提示语 + 文章信息）
     let articleHeader = '';
@@ -1506,10 +668,14 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     const excerpt = from || page.title.substring(0, 150);
 
     // 获取标签（从 FeatureTag 属性）
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     const tagNames: string[] = [];
     if (featureTag) {
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagNames.push(...featureTag);
+      } else if (typeof featureTag === 'string') {
+        tagNames.push(featureTag);
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagNames.push(featureTag.select.name);
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagNames.push(...featureTag.multi_select.map((tag: any) => tag.name));
@@ -1567,19 +733,23 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
 
     // 来源
     if (from) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">来源</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">来源平台</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(from)}</td></tr>`);
     }
 
     // 作者
     if (author) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">作者</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">原作者</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(author)}</td></tr>`);
     }
 
     // FeatureTag - 标签特色
-    const featureTag = page.properties.FeatureTag;
+    const featureTag = page.featureTag || page.properties.FeatureTag;
     if (featureTag) {
       let tagValue = '';
-      if (featureTag.type === 'select' && featureTag.select) {
+      if (Array.isArray(featureTag)) {
+        tagValue = featureTag.join(', ');
+      } else if (typeof featureTag === 'string') {
+        tagValue = featureTag;
+      } else if (featureTag.type === 'select' && featureTag.select) {
         tagValue = featureTag.select.name;
       } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
         tagValue = featureTag.multi_select.map((tag: any) => tag.name).join(', ');
@@ -1590,13 +760,13 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     }
 
     // ExpectationsRate - 个人期望
-    const expectationsRate = page.properties.ExpectationsRate?.number;
+    const expectationsRate = page.expectationsRate ?? page.properties.ExpectationsRate?.number;
     if (expectationsRate !== undefined && expectationsRate !== null) {
-      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">个人期望</td><td style="padding: 6px 10px; color: #333;">${expectationsRate}/10</td></tr>`);
+      infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">个人期待值</td><td style="padding: 6px 10px; color: #333;">${expectationsRate}/10</td></tr>`);
     }
 
     // Engine - 使用引擎
-    const engine = page.properties.Engine?.select?.name || '';
+    const engine = page.engine || page.properties.Engine?.select?.name || '';
     if (engine) {
       infoRows.push(`<tr><td style="padding: 6px 10px; vertical-align: top; width: 90px; color: #666; font-weight: 600;">使用引擎</td><td style="padding: 6px 10px; color: #333;">${this.escapeHtml(engine)}</td></tr>`);
     }
@@ -1643,186 +813,21 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
     publishMode: 'draft' | 'publish' = 'draft',
     autoCompress: boolean = true
   ): Promise<SyncState> {
-    const biliSyncKey = `bili_${articleId}`;
-    
-    LogService.log('========== syncVideoToBilibili 被调用 ==========', 'SyncService');
-    LogService.log(`  - articleId: ${articleId}`, 'SyncService');
-    LogService.log(`  - publishMode: ${publishMode}`, 'SyncService');
-    LogService.log(`  - metadata.title: ${metadata?.title}`, 'SyncService');
-    LogService.log(`  - metadata.tid: ${metadata?.tid}`, 'SyncService');
-    LogService.log(`  - metadata.tags: [${(metadata?.tags || []).join(', ')}]`, 'SyncService');
-    
-    try {
-      if (!this.bilibiliService) {
-        throw new Error('Bilibili 服务未初始化');
-      }
-
-      // 创建 AbortController 用于取消
-      const abortController = new AbortController();
-      this.activeSyncControllers.set(biliSyncKey, abortController);
-
-      LogService.log('========== SyncService: 开始同步视频到B站 ==========', 'SyncService');
-      this.updateSyncState(biliSyncKey, SyncStatus.SYNCING);
-
-      // 1. 获取文章页面
-      const page = await this.notionService.getPageProperties(articleId);
-      LogService.log(`文章标题: ${page.title}`, 'SyncService');
-
-      // 2. 从 Notion 获取更多文章属性（用于简介模板）
-      const linkStart = page.properties.LinkStart?.url || page.properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-      const from = page.properties.From?.rich_text?.[0]?.plain_text || '';
-      const author = page.properties.Author?.rich_text?.[0]?.plain_text || '';
-      const engine = page.properties.Engine?.select?.name || '';
-      const expectationsRate = page.properties.ExpectationsRate?.number;
-      
-      // 提取标签
-      const featureTag = page.properties.FeatureTag;
-      let tags: string[] = [];
-      if (featureTag) {
-        if (featureTag.type === 'select' && featureTag.select) {
-          tags = [featureTag.select.name];
-        } else if (featureTag.type === 'multi_select' && featureTag.multi_select) {
-          tags = featureTag.multi_select.map((tag: any) => tag.name);
-        }
-      }
-      
-      // 获取添加时间
-      const addedTimeProperty = page.properties.AddedTime;
-      let addedTime = '';
-      if (addedTimeProperty) {
-        if (addedTimeProperty.type === 'date' && addedTimeProperty.date) {
-          addedTime = addedTimeProperty.date.start;
-        } else if (addedTimeProperty.type === 'created_time' && addedTimeProperty.created_time) {
-          addedTime = addedTimeProperty.created_time;
-        }
-      }
-      if (!addedTime && page.addedTime) {
-        addedTime = page.addedTime;
-      }
-      
-      LogService.log(`文章属性 - 来源: ${from}, 作者: ${author}, 链接: ${linkStart}`, 'SyncService');
-      
-      // 如果 metadata 中没有指定 source，使用 Notion 中的 LinkStart
-      if (linkStart && !metadata.source) {
-        metadata.source = linkStart;
-      }
-      
-      // 自动获取封面图片（如果 metadata 中没有指定 cover）
-      if (!metadata.cover) {
-        const coverUrl = this.getCoverImageUrl(page);
-        if (coverUrl) {
-          metadata.cover = coverUrl;
-          LogService.log(`已自动获取封面图片: ${coverUrl.substring(0, 50)}...`, 'SyncService');
-        } else {
-          LogService.log('未找到封面图片', 'SyncService');
-        }
-      } else {
-        LogService.log(`使用指定的封面图片: ${metadata.cover.substring(0, 50)}...`, 'SyncService');
-      }
-      
-      // 将 Notion 属性添加到 metadata 中（用于简介模板）
-      if (!metadata.notionProps) {
-        metadata.notionProps = {};
-      }
-      metadata.notionProps = {
-        from,
-        author,
-        engine,
-        expectationsRate,
-        tags,
-        addedTime,
-        linkStart
-      };
-
-      // 应用标题模板（如果配置了）
-      const biliConfig = this.configService.getBilibiliConfig();
-      if (biliConfig.titleTemplate && biliConfig.titleTemplate.trim()) {
-        const originalTitle = metadata.title;
-        metadata.title = biliConfig.titleTemplate.replace(/\{title\}/g, metadata.title);
-        LogService.log(`应用标题模板: ${originalTitle} -> ${metadata.title}`, 'SyncService');
-      }
-
-      // 3. 提取视频
-      LogService.log('正在提取视频...', 'SyncService');
-      const videoInfos = await this.notionService.extractVideos(articleId);
-      
-      if (videoInfos.length === 0) {
-        throw new Error('文章中没有找到视频');
-      }
-
-      LogService.log(`找到 ${videoInfos.length} 个视频`, 'SyncService');
-
-      // 4. 下载视频
-      const videos: BilibiliVideo[] = [];
-      for (let i = 0; i < videoInfos.length; i++) {
-        const videoInfo = videoInfos[i];
-        LogService.log(`正在下载视频 ${i + 1}/${videoInfos.length}...`, 'SyncService');
-        
-        const video: BilibiliVideo = {
-          url: videoInfo.url,
-          caption: videoInfo.caption,
-          type: videoInfo.type
-        };
-
-        const localPath = await this.bilibiliService.downloadVideo(
-          video,
-          abortController.signal,
-          articleId  // 传递 articleId 用于进度追踪
-        );
-        
-        video.localPath = localPath;
-        videos.push(video);
-      }
-
-      // 5. 准备上传选项
-      const uploadOptions: BilibiliUploadOptions = {
-        publishMode,
-        metadata,
-        videos,
-        autoCompress,
-        compressionQuality: 23,
-        articleId  // 添加 articleId 用于进度追踪
-      };
-
-      // 5. 上传到B站
-      LogService.log(`开始上传到B站，模式: ${publishMode}`, 'SyncService');
-      const result = await this.bilibiliService.uploadVideo(
-        uploadOptions,
-        abortController.signal
-      );
-
-      LogService.success('========== B站同步成功 ==========', 'SyncService');
-      if (result.link) {
-        LogService.log(`稿件链接: ${result.link}`, 'SyncService');
-      }
-      if (result.bvid) {
-        LogService.log(`稿件BV号: ${result.bvid}`, 'SyncService');
-      }
-
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-
-      // 保存B站上传结果到同步状态（包含标题用于后续验证）
-      const successState = this.updateSyncState(biliSyncKey, SyncStatus.SUCCESS, undefined, {
-        bilibili: {
-          bvid: result.bvid,
-          link: result.link,
-          aid: result.aid,
-          title: metadata.title  // 保存视频标题
-        }
-      });
-      return successState;
-    } catch (error) {
-      LogService.error('========== B站同步失败 ==========', 'SyncService');
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      LogService.error(`错误: ${errorMessage}`, 'SyncService');
-      
-      // 清理控制器
-      this.activeSyncControllers.delete(biliSyncKey);
-      
-      const failedState = this.updateSyncState(biliSyncKey, SyncStatus.FAILED, errorMessage);
-      return failedState;
-    }
+    return syncVideoToBilibiliFlow(
+      {
+        notionService: this.notionService,
+        bilibiliService: this.bilibiliService,
+        configService: this.configService,
+        getCoverImageUrl: (page) => this.getCoverImageUrl(page),
+        setActiveController: (syncKey, controller) => this.activeSyncControllers.set(syncKey, controller),
+        deleteActiveController: (syncKey) => this.activeSyncControllers.delete(syncKey),
+        updateSyncState: (id, status, error, results) => this.updateSyncState(id, status, error, results),
+      },
+      articleId,
+      metadata,
+      publishMode,
+      autoCompress
+    );
   }
 
   /**
@@ -1831,9 +836,9 @@ ${language ? `<div style="padding: 8px 12px; background: #e8eaed; color: #666; f
   async hasVideos(articleId: string): Promise<boolean> {
     try {
       return await this.notionService.hasVideos(articleId);
-    } catch (error) {
+    } catch {
       LogService.error('检查视频失败', 'SyncService');
       return false;
     }
   }
-} 
+}

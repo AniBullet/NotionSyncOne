@@ -1,7 +1,31 @@
 import { Client } from '@notionhq/client';
 import { NotionConfig, NotionPage, NotionBlock } from '../../shared/types/notion';
 import { PageObjectResponse, BlockObjectResponse } from '@notionhq/client/build/src/api-endpoints';
+import { getNotionFieldMap, getNotionProperty, readDateValue, readPlainText, readSelectNames } from './sync/notionFields';
 import { logger } from '../utils/logger';
+
+const NOTION_MAX_RETRIES = 3;
+
+export function isRetryableNotionError(error: any): boolean {
+  const message = error?.message || '';
+  return (
+    message.includes('ECONNRESET') ||
+    message.includes('ETIMEDOUT') ||
+    message.includes('ENOTFOUND') ||
+    message.includes('network') ||
+    message.includes('FetchError') ||
+    error?.code === 'ECONNRESET' ||
+    error?.code === 'ETIMEDOUT'
+  );
+}
+
+function isNonRetryableNotionError(error: any): boolean {
+  return (
+    error?.code === 'object_not_found' ||
+    error?.code === 'unauthorized' ||
+    error?.status === 400
+  );
+}
 
 export class NotionService {
   private client: Client | null = null;
@@ -15,6 +39,10 @@ export class NotionService {
   constructor(config: NotionConfig) {
     this.config = config;
     this.initClient();
+  }
+
+  getConfig(): NotionConfig {
+    return this.config;
   }
   
   /**
@@ -39,6 +67,38 @@ export class NotionService {
       logger.error('Notion 客户端初始化失败:', error);
       this.client = null;
     }
+  }
+
+  private async withNotionRetry<T>(operation: string, request: () => Promise<T>): Promise<T> {
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt < NOTION_MAX_RETRIES; attempt++) {
+      try {
+        return await request();
+      } catch (error: any) {
+        lastError = error;
+
+        if (
+          isNonRetryableNotionError(error) ||
+          !isRetryableNotionError(error) ||
+          attempt === NOTION_MAX_RETRIES - 1
+        ) {
+          break;
+        }
+
+        const retryCount = attempt + 1;
+        const delay = retryCount * 1000;
+        logger.log(`${operation} 网络错误，${delay}ms 后重试 (${retryCount}/${NOTION_MAX_RETRIES})...`, 'NotionService');
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    if (isRetryableNotionError(lastError)) {
+      const message = lastError?.message || String(lastError);
+      throw new Error(`${operation}失败：网络连接不稳定，已重试 ${NOTION_MAX_RETRIES} 次。原始错误：${message}`);
+    }
+
+    throw lastError;
   }
 
   /**
@@ -68,7 +128,7 @@ export class NotionService {
     }
     
     // 添加重试机制处理网络错误
-    const maxRetries = 3;
+    const maxRetries = NOTION_MAX_RETRIES;
     let retryCount = 0;
     let lastError: any = null;
     
@@ -84,7 +144,7 @@ export class NotionService {
             database_id: this.config.databaseId,
             sorts: [
               {
-                property: 'AddedTime',
+                property: getNotionFieldMap(this.config).addedTime,
                 direction: 'descending'
               }
             ],
@@ -118,14 +178,13 @@ export class NotionService {
 
           // 获取新属性
           const properties = page.properties as any;
-          const linkStart = properties.LinkStart?.url || properties.LinkStart?.rich_text?.[0]?.plain_text || '';
-          const from = properties.From?.rich_text?.[0]?.plain_text || '';
-          const author = properties.Author?.rich_text?.[0]?.plain_text || '';
-          const featureTag = properties.FeatureTag?.select?.name || 
-                            (properties.FeatureTag?.multi_select?.map((item: any) => item.name) || []);
-          const expectationsRate = properties.ExpectationsRate?.number || 0;
-          const engine = properties.Engine?.select?.name || '';
-          const addedTime = properties.AddedTime?.date?.start || '';
+          const linkStart = readPlainText(getNotionProperty({ properties }, this.config, 'linkStart'));
+          const from = readPlainText(getNotionProperty({ properties }, this.config, 'from'));
+          const author = readPlainText(getNotionProperty({ properties }, this.config, 'author'));
+          const featureTag = readSelectNames(getNotionProperty({ properties }, this.config, 'featureTag'));
+          const expectationsRate = getNotionProperty({ properties }, this.config, 'expectationsRate')?.number || 0;
+          const engine = readSelectNames(getNotionProperty({ properties }, this.config, 'engine'))[0] || readPlainText(getNotionProperty({ properties }, this.config, 'engine'));
+          const addedTime = readDateValue(getNotionProperty({ properties }, this.config, 'addedTime'));
 
           // 移除详细日志输出，避免日志过多
           // 只在调试模式下输出详细信息
@@ -170,14 +229,7 @@ export class NotionService {
         }
         
         // 检查是否是网络错误（需要重试）
-        const isNetworkError = 
-          error.message?.includes('ECONNRESET') ||
-          error.message?.includes('ETIMEDOUT') ||
-          error.message?.includes('ENOTFOUND') ||
-          error.message?.includes('network') ||
-          error.message?.includes('FetchError') ||
-          error.code === 'ECONNRESET' ||
-          error.code === 'ETIMEDOUT';
+        const isNetworkError = isRetryableNotionError(error);
         
         if (isNetworkError && retryCount < maxRetries - 1) {
           retryCount++;
@@ -240,7 +292,9 @@ export class NotionService {
         throw new Error('Notion 客户端未初始化');
       }
 
-      const response = await this.client.pages.retrieve({ page_id: pageId });
+      const response = await this.withNotionRetry('读取 Notion 页面属性', () =>
+        this.client!.pages.retrieve({ page_id: pageId })
+      );
       const page = response as PageObjectResponse;
 
       // 查找标题属性
@@ -254,6 +308,14 @@ export class NotionService {
 
       // 提取封面图片
       const cover = (page as any).cover || null;
+      const properties = page.properties as any;
+      const linkStart = readPlainText(getNotionProperty({ properties }, this.config, 'linkStart'));
+      const from = readPlainText(getNotionProperty({ properties }, this.config, 'from'));
+      const author = readPlainText(getNotionProperty({ properties }, this.config, 'author'));
+      const featureTag = readSelectNames(getNotionProperty({ properties }, this.config, 'featureTag'));
+      const expectationsRate = getNotionProperty({ properties }, this.config, 'expectationsRate')?.number || 0;
+      const engine = readSelectNames(getNotionProperty({ properties }, this.config, 'engine'))[0] || readPlainText(getNotionProperty({ properties }, this.config, 'engine'));
+      const addedTime = readDateValue(getNotionProperty({ properties }, this.config, 'addedTime'));
 
       return {
         id: page.id,
@@ -261,7 +323,14 @@ export class NotionService {
         title,
         properties: page.properties,
         lastEditedTime: page.last_edited_time,
-        cover: cover
+        cover: cover,
+        linkStart,
+        from,
+        author,
+        featureTag,
+        expectationsRate,
+        engine,
+        addedTime
       };
     } catch (error: any) {
       if (error.code === 'object_not_found') {
@@ -285,10 +354,12 @@ export class NotionService {
         let startCursor: string | undefined = undefined;
 
         while (hasMore) {
-          const response = await this.client!.blocks.children.list({
-            block_id: blockId,
-            start_cursor: startCursor
-          });
+          const response = await this.withNotionRetry('读取 Notion 页面内容', () =>
+            this.client!.blocks.children.list({
+              block_id: blockId,
+              start_cursor: startCursor
+            })
+          );
 
           for (const block of response.results as BlockObjectResponse[]) {
             const blockTypeData = (block as any)[block.type] || {};

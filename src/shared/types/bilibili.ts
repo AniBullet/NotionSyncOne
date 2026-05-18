@@ -9,6 +9,8 @@ export interface BilibiliConfig {
   defaultTid?: number;
   // 默认标签
   defaultTags?: string[];
+  // 默认合集/系列 ID
+  defaultSeasonId?: number;
   // 是否启用
   enabled?: boolean;
   
@@ -23,6 +25,10 @@ export interface BilibiliConfig {
   openElec?: 0 | 1;  // 0-关闭充电 1-开启充电
   upCloseReply?: boolean;  // 是否关闭评论
   upCloseDanmu?: boolean;  // 是否关闭弹幕
+
+  // 自定义代理URL（优先级最高，留空则自动检测）
+  // 示例：http://127.0.0.1:10809  或  socks5://127.0.0.1:10808
+  proxy?: string;
 }
 
 export interface BilibiliVideo {
@@ -67,10 +73,10 @@ export interface BilibiliMetadata {
   upCloseDanmu?: boolean;
   // Notion 页面属性（用于简介模板）
   notionProps?: {
-    from?: string;         // 来源
-    author?: string;       // 作者
+    from?: string;         // 来源平台
+    author?: string;       // 原作者
     engine?: string;       // 使用引擎
-    expectationsRate?: number;  // 个人期望
+    expectationsRate?: number;  // 个人期待值
     tags?: string[];       // 标签特色
     addedTime?: string;    // 添加时间
     linkStart?: string;    // 链接
@@ -90,6 +96,17 @@ export interface BilibiliUploadOptions {
   compressionQuality?: number;
   // 文章ID（用于进度追踪）
   articleId?: string;
+}
+
+export interface BilibiliSection {
+  sectionId: number;
+  sectionName: string;
+}
+
+export interface BilibiliSeason {
+  seasonId: number;
+  seasonName: string;
+  sections: BilibiliSection[];
 }
 
 export interface BilibiliUploadResult {

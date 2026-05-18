@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NotionPage } from '../../shared/types/notion';
 import { SyncState, SyncStatus } from '../../shared/types/sync';
+import { BilibiliMetadata } from '../../shared/types/bilibili';
+import { Config } from '../../shared/types/config';
 import { IpcService } from '../../shared/services/IpcService';
 import { APP_VERSION } from '../../shared/constants';
 import ArticleGrid from './ArticleGrid';
@@ -8,13 +10,32 @@ import SettingsModal from './SettingsModal';
 import ConfirmDialog from './ConfirmDialog';
 import ThemeToggle from './ThemeToggle';
 import { SyncTarget } from './SyncButton';
+import {
+  getPlatformReadiness,
+  getSyncActionState,
+  getSyncTargetDisplay,
+  PlatformReadiness,
+  WorkbenchReadiness
+} from '../utils/workbenchStatus';
+import {
+  collectSyncFailures,
+  getSyncFailureGuidance,
+  PLATFORM_COLORS
+} from '../utils/syncPresentation';
+import type { SyncFailureDetail, SyncPlatform } from '../utils/syncPresentation';
 
 import iconUrl from '/icon.png';
 
+const EMPTY_READINESS = getPlatformReadiness({
+  notion: { apiKey: '', databaseId: '' },
+  wechat: { appId: '', appSecret: '' }
+});
+
+const dragRegionStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties & { WebkitAppRegion: 'drag' };
+const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties & { WebkitAppRegion: 'no-drag' };
+
 // 本地缓存 key
 const CACHE_KEY = 'notionsyncone_articles_cache';
-const CACHE_CONFIG_KEY = 'notionsyncone_config_cache';
-
 // 从 localStorage 读取缓存
 const loadCachedArticles = (): NotionPage[] => {
   try {
@@ -49,6 +70,14 @@ const MainLayout: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasWordPressConfig, setHasWordPressConfig] = useState(false);
   const [hasBilibiliConfig, setHasBilibiliConfig] = useState(false);
+  const [platformReadiness, setPlatformReadiness] = useState<WorkbenchReadiness>(EMPTY_READINESS);
+  const [config, setConfig] = useState<Config>({
+    notion: { apiKey: '', databaseId: '' },
+    wechat: { appId: '', appSecret: '' },
+    wordpress: { enabled: false, siteUrl: '', username: '', appPassword: '' },
+    bilibili: { enabled: false }
+  });
+  const [openSyncMenu, setOpenSyncMenu] = useState<SyncTarget | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about'>('notion');
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -60,37 +89,41 @@ const MainLayout: React.FC = () => {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState<string>('就绪');
+  const [showSyncFailures, setShowSyncFailures] = useState(false);
+  const [dismissedFailures, setDismissedFailures] = useState<Set<string>>(new Set());
+  const [expandedFailures, setExpandedFailures] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
     checkUpdate();
     
     // 监听B站同步进度
-    const handleProgress = (_event: any, data: { phase: string; progress: number; title: string; articleId?: string }) => {
+    const handleProgress = (data: unknown) => {
+      const progressData = data as { phase: string; progress: number; title: string; articleId?: string };
       // 防御性检查：确保 data 存在且有必要字段
-      if (!data || data.phase === undefined || data.progress === undefined) {
+      if (!progressData || progressData.phase === undefined || progressData.progress === undefined) {
         return;
       }
       
       // 更新状态栏消息
-      const phaseText = data.phase === 'downloading' ? '📥 下载视频' : '📤 上传到B站';
-      setStatusMessage(`${phaseText}: ${data.progress.toFixed(1)}%`);
+      const phaseText = progressData.phase === 'downloading' ? '下载视频' : '上传到 B站';
+      setStatusMessage(`${phaseText}: ${progressData.progress.toFixed(1)}%`);
       
       // 更新文章卡片进度
-      if (data.articleId) {
-        if (data.progress >= 100) {
+      if (progressData.articleId) {
+        if (progressData.progress >= 100) {
           // 完成后延迟清除进度
           setTimeout(() => {
             setBiliProgress(prev => {
               const newProgress = { ...prev };
-              delete newProgress[data.articleId!];
+              delete newProgress[progressData.articleId!];
               return newProgress;
             });
           }, 500);
         } else {
           setBiliProgress(prev => ({
             ...prev,
-            [data.articleId]: { phase: data.phase, progress: data.progress }
+            [progressData.articleId!]: { phase: progressData.phase, progress: progressData.progress }
           }));
         }
       }
@@ -101,6 +134,8 @@ const MainLayout: React.FC = () => {
     return () => {
       window.electron.ipcRenderer.removeListener('bilibili-sync-progress', handleProgress);
     };
+    // 初始加载只需要注册一次，刷新动作由按钮显式触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkUpdate = async () => {
@@ -148,11 +183,12 @@ const MainLayout: React.FC = () => {
       }
       setError(null);
       
-      const [pages, states, config] = await Promise.all([
+      const [pages, states, fetchedConfig] = await Promise.all([
         IpcService.getNotionPages(forceRefresh),
         window.electron.ipcRenderer.invoke('get-all-sync-states'),
         IpcService.getConfig()
       ]);
+      setConfig(fetchedConfig);
       
       // 更新文章并保存到本地缓存
       setArticles(pages);
@@ -176,10 +212,10 @@ const MainLayout: React.FC = () => {
       setBiliSyncStates(biliStates);
       
       // 检查配置
-      const hasWp = !!(config.wordpress?.siteUrl && config.wordpress?.username && config.wordpress?.appPassword);
-      const hasBili = !!(config.bilibili?.enabled);
-      setHasWordPressConfig(hasWp);
-      setHasBilibiliConfig(hasBili);
+      const readiness = getPlatformReadiness(fetchedConfig);
+      setPlatformReadiness(readiness);
+      setHasWordPressConfig(readiness.wordpress.configured);
+      setHasBilibiliConfig(readiness.bilibili.configured);
       
       setStatusMessage(`已加载 ${pages.length} 篇文章`);
     } catch (err) {
@@ -202,7 +238,13 @@ const MainLayout: React.FC = () => {
       return;
     }
 
-    const targetText = target === 'wechat' ? '微信' : target === 'wordpress' ? 'WordPress' : target === 'bilibili' ? 'B站' : '全部平台';
+    const actionState = getSyncActionState(target, platformReadiness, selectedArticles.size);
+    if (actionState.disabled) {
+      setStatusMessage(actionState.reason);
+      return;
+    }
+
+    const targetText = target === 'wechat' ? '微信' : target === 'bilibili' ? 'B站' : target === 'wordpress' ? 'WordPress' : '全部平台';
     const modeText = mode === 'draft' ? '草稿' : '发布';
     const titles = Array.from(selectedArticles).map(id => articles.find(a => a.id === id)?.title || id).slice(0, 3);
     const more = selectedArticles.size > 3 ? `...等 ${selectedArticles.size} 篇` : '';
@@ -216,6 +258,28 @@ const MainLayout: React.FC = () => {
         await doMultiSync(Array.from(selectedArticles), target, mode);
       }
     });
+  };
+
+  const markSyncFailed = (articleId: string, platform: SyncPlatform, error: string) => {
+    const nextState: SyncState = {
+      articleId: platform === 'wechat' ? articleId : `${platform === 'wordpress' ? 'wp' : 'bili'}_${articleId}`,
+      status: SyncStatus.FAILED,
+      error
+    };
+
+    if (platform === 'wechat') {
+      setSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    } else if (platform === 'wordpress') {
+      setWpSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    } else {
+      setBiliSyncStates(prev => ({ ...prev, [articleId]: nextState }));
+    }
+  };
+
+  const markTargetFailed = (articleId: string, target: SyncTarget, error: string) => {
+    if (target === 'wechat' || target === 'both') markSyncFailed(articleId, 'wechat', error);
+    if (target === 'wordpress' || target === 'both') markSyncFailed(articleId, 'wordpress', error);
+    if (target === 'bilibili') markSyncFailed(articleId, 'bilibili', error);
   };
 
   const doMultiSync = async (articleIds: string[], target: SyncTarget, mode: 'publish' | 'draft') => {
@@ -248,12 +312,12 @@ const MainLayout: React.FC = () => {
         }
 
         if (target === 'bilibili') {
-          setStatusMessage(`📹 正在同步 [${i + 1}/${total}]: ${title}`);
+          setStatusMessage(`正在同步 B站 [${i + 1}/${total}]: ${title}`);
           setBiliSyncStates(prev => ({ ...prev, [articleId]: { articleId: `bili_${articleId}`, status: SyncStatus.SYNCING } }));
           
           // 调用B站同步服务
           try {
-            const metadata: any = {
+            const metadata: BilibiliMetadata = {
               title: title,
               // desc 不在这里设置，让后端根据 descTemplate 配置自动生成
               // 使用默认配置
@@ -267,24 +331,25 @@ const MainLayout: React.FC = () => {
             
             if (state.status === SyncStatus.SUCCESS) {
               successCount++;
-              setStatusMessage(`✅ B站同步成功 [${i + 1}/${total}]: ${title}`);
+              setStatusMessage(`B站同步成功 [${i + 1}/${total}]: ${title}`);
             } else {
               failCount++;
-              setStatusMessage(`⚠️ B站同步失败 [${i + 1}/${total}]: ${state.error || '未知错误'}`);
+              setStatusMessage(`B站同步失败 [${i + 1}/${total}]: ${state.error || '未知错误'}`);
             }
-          } catch (error: any) {
-            const errorMsg = error?.message || 'B站同步失败';
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'B站同步失败';
             
             setBiliSyncStates(prev => ({ 
               ...prev, 
               [articleId]: { 
                 articleId: `bili_${articleId}`, 
-                status: SyncStatus.ERROR, 
+                status: SyncStatus.FAILED,
                 error: errorMsg 
               } 
             }));
             failCount++;
-            setStatusMessage(`❌ B站同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+            setStatusMessage(`B站同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+            setShowSyncFailures(true);
           }
         }
         
@@ -296,15 +361,20 @@ const MainLayout: React.FC = () => {
         }
       } catch (error) {
         failCount++;
+        const errorMsg = error instanceof Error ? error.message : '同步失败';
+        markTargetFailed(articleId, target, errorMsg);
+        setStatusMessage(`同步失败 [${i + 1}/${total}]: ${errorMsg}`);
+        setShowSyncFailures(true);
         console.error(`同步文章 ${articleId} 失败:`, error);
       }
     }
 
     const result = failCount === 0 
-      ? `✅ 全部成功！已同步 ${successCount} 篇文章` 
-      : `⚠️ 部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇`;
+      ? `全部成功，已同步 ${successCount} 篇文章`
+      : `部分失败：成功 ${successCount} 篇，失败 ${failCount} 篇，点“查看原因”看详情`;
     setStatusMessage(result);
-    await IpcService.showNotification('同步完成', result.replace(/[✅⚠️]/g, '').trim());
+    setShowSyncFailures(failCount > 0);
+    await IpcService.showNotification('同步完成', result);
     
     // 清空选择
     setSelectedArticles(new Set());
@@ -313,7 +383,11 @@ const MainLayout: React.FC = () => {
   const handleToggleArticle = (id: string) => {
     setSelectedArticles(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -322,16 +396,479 @@ const MainLayout: React.FC = () => {
   const wechatSynced = Object.values(syncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const wpSynced = Object.values(wpSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
   const biliSynced = Object.values(biliSyncStates).filter(s => s.status === SyncStatus.SUCCESS).length;
+  const syncFailures = collectSyncFailures(articles, syncStates, wpSyncStates, biliSyncStates);
+  const failureKey = (f: SyncFailureDetail) => `${f.articleId}-${f.platform}`;
+  const visibleFailures = syncFailures.filter(f => !dismissedFailures.has(failureKey(f)));
+  const enabledSyncTargets: SyncTarget[] = [
+    'wechat',
+    ...(config.bilibili?.enabled ? ['bilibili' as const] : []),
+    ...(config.wordpress?.enabled ? ['wordpress' as const] : [])
+  ];
+  const visibleSyncTargets: SyncTarget[] = enabledSyncTargets.length > 1
+    ? [...enabledSyncTargets, 'both']
+    : enabledSyncTargets;
+
+  const openSettingsTab = (tab: 'notion' | 'wechat' | 'wordpress' | 'bilibili' | 'about') => {
+    setSettingsTab(tab);
+    setShowSettings(true);
+  };
+
+  const retryFailureAsDraft = async (failure: SyncFailureDetail) => {
+    setShowSyncFailures(false);
+    await doMultiSync([failure.articleId], failure.platform, 'draft');
+  };
+
+  const resolveFailure = async (failure: SyncFailureDetail) => {
+    try {
+      await window.electron.ipcRenderer.invoke('clear-platform-sync-state', failure.articleId, failure.platform);
+    } catch {
+      // 后端清除失败时只做 UI 层忽略
+    }
+    // 同步清除本地 state，不等下次 loadData
+    if (failure.platform === 'wechat') {
+      setSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    } else if (failure.platform === 'bilibili') {
+      setBiliSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    } else {
+      setWpSyncStates(prev => { const n = { ...prev }; delete n[failure.articleId]; return n; });
+    }
+  };
+
+  const renderReadinessChip = (platform: PlatformReadiness) => {
+    const available = platform.configured;
+    return (
+      <button
+        key={platform.key}
+        onClick={() => !available && openSettingsTab(platform.settingsTab)}
+        aria-label={`${platform.label}: ${platform.summary}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '18px',
+          height: '28px',
+          padding: 0,
+          borderRadius: '999px',
+          border: 'none',
+          backgroundColor: 'transparent',
+          color: available ? platform.accentColor : 'var(--text-secondary)',
+          cursor: available ? 'default' : 'pointer'
+        }}
+        title={available ? `${platform.label}: ${platform.summary}` : `${platform.label}: ${platform.summary}，点击打开设置`}
+      >
+        <span style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: available ? platform.accentColor : 'var(--warning)',
+          boxShadow: available ? `0 0 0 3px ${platform.accentColor}18` : '0 0 0 3px rgba(252, 211, 77, 0.16)'
+        }} />
+      </button>
+    );
+  };
+
+  const renderSyncAction = (target: SyncTarget) => {
+    const platform = platformReadiness[target];
+    const actionState = getSyncActionState(target, platformReadiness, selectedArticles.size);
+    const disabled = actionState.disabled;
+    const isOpen = openSyncMenu === target;
+    const accent = platform.accentColor;
+    const publishText = target === 'bilibili' ? '投稿' : '发布';
+    const display = getSyncTargetDisplay(target);
+
+    return (
+      <div key={target} style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          disabled={disabled}
+          onClick={() => setOpenSyncMenu(prev => prev === target ? null : target)}
+          aria-label={display.ariaLabel}
+          style={{
+            minWidth: target === 'wordpress' ? '44px' : '52px',
+            height: '36px',
+            padding: '0 10px',
+            borderRadius: '8px',
+            border: disabled ? '1px solid var(--border-light)' : `1px solid ${accent}66`,
+            backgroundColor: disabled ? 'var(--bg-tertiary)' : `${accent}18`,
+            color: disabled ? 'var(--text-tertiary)' : accent,
+            fontSize: '12px',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            fontWeight: 800,
+            opacity: disabled ? 0.62 : 1
+          }}
+          title={actionState.reason || display.ariaLabel}
+        >
+          {display.compactLabel}
+        </button>
+        {isOpen && !disabled && (
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: '6px',
+            backgroundColor: 'var(--bg-primary)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            zIndex: 100,
+            overflow: 'hidden',
+            minWidth: '112px'
+          }}>
+            <button
+              onClick={() => { setOpenSyncMenu(null); handlePlatformSync(target, 'draft'); }}
+              style={{ display: 'block', width: '100%', padding: '9px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              保存草稿
+            </button>
+            <button
+              onClick={() => { setOpenSyncMenu(null); handlePlatformSync(target, 'publish'); }}
+              style={{ display: 'block', width: '100%', padding: '9px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              {publishText}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFailurePanel = (failures: SyncFailureDetail[]) => {
+    const actionButtonStyle: React.CSSProperties = {
+      height: '30px',
+      padding: '0 10px',
+      borderRadius: '6px',
+      fontSize: '12px',
+      fontWeight: 700,
+      cursor: 'pointer'
+    };
+
+    const dismissAll = () => {
+      setDismissedFailures(prev => {
+        const next = new Set(prev);
+        failures.forEach(f => next.add(failureKey(f)));
+        return next;
+      });
+      setShowSyncFailures(false);
+    };
+
+    return (
+      <section
+        role="dialog"
+        aria-label="同步失败原因"
+        style={{
+          position: 'absolute',
+          right: '20px',
+          bottom: '48px',
+          width: 'min(580px, calc(100% - 40px))',
+          maxHeight: '400px',
+          overflow: 'hidden',
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--border-light)',
+          borderRadius: '8px',
+          boxShadow: '0 16px 42px rgba(0,0,0,0.22)',
+          zIndex: 90
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 12px',
+          borderBottom: '1px solid var(--border-light)'
+        }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            同步失败处理
+            <span style={{ marginLeft: '8px', fontSize: '12px', fontWeight: 400, color: 'var(--text-tertiary)' }}>
+              {failures.length} 个
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              onClick={dismissAll}
+              style={{
+                height: '28px',
+                padding: '0 10px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+              title="全部标为已读"
+            >
+              全部忽略
+            </button>
+            <button
+              onClick={() => setShowSyncFailures(false)}
+              aria-label="关闭失败原因"
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-light)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '16px',
+                lineHeight: 1
+              }}
+              title="关闭"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <div style={{ maxHeight: '344px', overflow: 'auto', padding: '6px' }}>
+          {failures.map((failure, index) => {
+            const key = failureKey(failure);
+            const isExpanded = expandedFailures.has(key);
+            const readiness = platformReadiness[failure.platform];
+            const guidance = getSyncFailureGuidance(failure.platform, failure.error, readiness);
+            const accent = PLATFORM_COLORS[failure.platform];
+
+            const toggleExpand = () => {
+              setExpandedFailures(prev => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              });
+            };
+
+            const dismiss = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setDismissedFailures(prev => new Set(prev).add(key));
+            };
+
+            return (
+              <div
+                key={key}
+                style={{
+                  borderRadius: '6px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  marginBottom: index === failures.length - 1 ? 0 : '4px',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* 标题行（始终显示，可点击展开） */}
+                <div
+                  onClick={toggleExpand}
+                  role="button"
+                  aria-expanded={isExpanded}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <span style={{
+                    flexShrink: 0,
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    backgroundColor: `${accent}18`,
+                    color: accent,
+                    fontSize: '11px',
+                    fontWeight: 700
+                  }}>
+                    {failure.platformLabel}
+                  </span>
+                  <span
+                    title={failure.title}
+                    style={{
+                      flex: 1,
+                      color: 'var(--text-primary)',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      minWidth: 0
+                    }}
+                  >
+                    {failure.title}
+                  </span>
+                  <span style={{
+                    flexShrink: 0,
+                    color: 'var(--text-tertiary)',
+                    fontSize: '12px',
+                    marginLeft: '2px'
+                  }}>
+                    {isExpanded ? '▲' : '▼'}
+                  </span>
+                  <button
+                    onClick={dismiss}
+                    aria-label={`忽略 ${failure.platformLabel}：${failure.title}`}
+                    style={{
+                      flexShrink: 0,
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-tertiary)',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="忽略此条"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* 展开详情 */}
+                {isExpanded && (
+                  <div style={{ padding: '0 10px 10px', borderTop: '1px solid var(--border-light)' }}>
+                    <div style={{ marginTop: '8px', color: 'var(--error)', fontSize: '12px', lineHeight: 1.45 }}>
+                      {failure.error}
+                    </div>
+                    <div style={{ marginTop: '6px', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 700 }}>
+                      {guidance.primaryText}
+                    </div>
+                    <div style={{ marginTop: '2px', color: 'var(--text-tertiary)', fontSize: '12px', lineHeight: 1.45 }}>
+                      {guidance.secondaryText}
+                    </div>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => retryFailureAsDraft(failure)}
+                        aria-label={`重试 ${failure.platformLabel}：${failure.title}`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: `1px solid ${accent}66`,
+                          backgroundColor: `${accent}18`,
+                          color: accent
+                        }}
+                      >
+                        {guidance.retryLabel}
+                      </button>
+                      <button
+                        onClick={() => openSettingsTab(failure.platform)}
+                        aria-label={`打开 ${failure.platformLabel} 设置`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: guidance.intent === 'settings' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-light)',
+                          backgroundColor: guidance.intent === 'settings' ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                          color: guidance.intent === 'settings' ? 'var(--error)' : 'var(--text-secondary)'
+                        }}
+                      >
+                        {guidance.settingsLabel}
+                      </button>
+                      <button
+                        onClick={() => resolveFailure(failure)}
+                        aria-label={`标记已解决：${failure.platformLabel} ${failure.title}`}
+                        style={{
+                          ...actionButtonStyle,
+                          border: '1px solid var(--border-light)',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-tertiary)',
+                          marginLeft: 'auto'
+                        }}
+                        title="清除此条失败记录（已在其他地方处理、或为旧版本遗留错误）"
+                      >
+                        标记已解决
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
+  const renderWindowControls = () => {
+    const baseButtonStyle: React.CSSProperties = {
+      ...noDragRegionStyle,
+      width: '42px',
+      height: '38px',
+      padding: 0,
+      borderRadius: '8px',
+      border: '1px solid var(--border-medium)',
+      backgroundColor: 'var(--bg-primary)',
+      color: 'var(--text-secondary)',
+      cursor: 'pointer',
+      fontSize: '16px',
+      lineHeight: 1,
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease'
+    };
+
+    const setHover = (element: HTMLButtonElement, danger = false) => {
+      element.style.backgroundColor = danger ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-secondary)';
+      element.style.color = danger ? 'var(--error)' : 'var(--text-primary)';
+      element.style.borderColor = danger ? 'rgba(239, 68, 68, 0.42)' : 'var(--border-medium)';
+      element.style.boxShadow = '0 2px 8px rgba(0,0,0,0.10)';
+    };
+
+    const clearHover = (element: HTMLButtonElement) => {
+      element.style.backgroundColor = 'var(--bg-primary)';
+      element.style.color = 'var(--text-secondary)';
+      element.style.borderColor = 'var(--border-medium)';
+      element.style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
+    };
+
+    return (
+      <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
+        <button
+          onClick={() => window.electron.minimizeWindow()}
+          aria-label="最小化窗口"
+          title="最小化"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          −
+        </button>
+        <button
+          onClick={() => window.electron.toggleMaximizeWindow()}
+          aria-label="最大化或还原窗口"
+          title="最大化/还原"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          □
+        </button>
+        <button
+          onClick={() => window.electron.closeWindow()}
+          aria-label="关闭窗口"
+          title="关闭"
+          style={baseButtonStyle}
+          onMouseEnter={event => setHover(event.currentTarget, true)}
+          onMouseLeave={event => clearHover(event.currentTarget)}
+        >
+          ×
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div style={{ 
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      backgroundColor: 'var(--bg-secondary)'
+      backgroundColor: 'var(--bg-secondary)',
+      position: 'relative'
     }}>
       {/* 顶部导航栏 */}
       <header style={{ 
+        ...dragRegionStyle,
         backgroundColor: 'var(--bg-primary)',
         borderBottom: '1px solid var(--border-light)',
         padding: '12px 20px',
@@ -341,7 +878,7 @@ const MainLayout: React.FC = () => {
         flexShrink: 0
       }}>
         {/* 左侧：Logo 和统计 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img src={iconUrl} alt="NotionSyncOne" style={{ width: '26px', height: '26px', borderRadius: '6px' }} />
             <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>NotionSyncOne</span>
@@ -379,21 +916,10 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(7, 193, 96, 0.15)',
                 color: '#07C160'
               }}>
-                💬 {wechatSynced}
+                微信 {wechatSynced}
               </span>
             )}
-            {wpSynced > 0 && (
-              <span style={{ 
-                fontSize: '11px', 
-                padding: '2px 8px', 
-                borderRadius: '10px',
-                backgroundColor: 'rgba(33, 117, 155, 0.15)',
-                color: '#21759B'
-              }}>
-                🌐 {wpSynced}
-              </span>
-            )}
-            {biliSynced > 0 && (
+            {config.bilibili?.enabled && biliSynced > 0 && (
               <span style={{ 
                 fontSize: '11px', 
                 padding: '2px 8px', 
@@ -401,277 +927,72 @@ const MainLayout: React.FC = () => {
                 backgroundColor: 'rgba(251, 114, 153, 0.15)',
                 color: '#FB7299'
               }}>
-                📹 {biliSynced}
+                B站 {biliSynced}
+              </span>
+            )}
+            {config.wordpress?.enabled && wpSynced > 0 && (
+              <span style={{ 
+                fontSize: '11px', 
+                padding: '2px 8px', 
+                borderRadius: '10px',
+                backgroundColor: 'rgba(33, 117, 155, 0.15)',
+                color: '#21759B'
+              }}>
+                WP {wpSynced}
               </span>
             )}
           </div>
         </div>
         
         {/* 右侧：平台按钮 + 刷新 + 设置 + 主题 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* 平台同步按钮组 - 始终显示 */}
-          <div style={{ 
-            display: 'flex', 
-            gap: '6px', 
+        <div style={{ ...noDragRegionStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
             marginRight: '12px',
             paddingRight: '12px',
             borderRight: '1px solid var(--border-light)'
           }}>
-            {/* 微信按钮 */}
-            <div style={{ position: 'relative', display: 'inline-block' }}>
-              <button
-                disabled={selectedArticles.size === 0}
-                onClick={() => {
-                  if (selectedArticles.size === 0) return;
-                  const menu = document.getElementById('wechat-menu');
-                  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: selectedArticles.size > 0 ? '1px solid rgba(7, 193, 96, 0.3)' : '1px solid var(--border-light)',
-                  backgroundColor: selectedArticles.size > 0 ? 'rgba(7, 193, 96, 0.1)' : 'var(--bg-tertiary)',
-                  color: selectedArticles.size > 0 ? '#07C160' : 'var(--text-tertiary)',
-                  fontSize: '12px',
-                  cursor: selectedArticles.size > 0 ? 'pointer' : 'not-allowed',
-                  fontWeight: '500',
-                  opacity: selectedArticles.size > 0 ? 1 : 0.5
-                }}
-              >
-                💬 微信
-              </button>
-                <div id="wechat-menu" style={{ 
-                  display: 'none', 
-                  position: 'absolute', 
-                  top: '100%', 
-                  left: 0, 
-                  marginTop: '4px',
-                  backgroundColor: 'var(--bg-primary)',
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '6px',
-                  boxShadow: '0 3px 12px rgba(0,0,0,0.12)',
-                  zIndex: 100,
-                  overflow: 'hidden',
-                  minWidth: '90px'
-                }}>
-                  <button 
-                    onClick={() => { document.getElementById('wechat-menu')!.style.display = 'none'; handlePlatformSync('wechat', 'draft'); }}
-                    style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    存草稿
-                  </button>
-                  <button 
-                    onClick={() => { document.getElementById('wechat-menu')!.style.display = 'none'; handlePlatformSync('wechat', 'publish'); }}
-                    style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    发布
-                  </button>
-                </div>
-              </div>
-
-            {/* WordPress按钮 */}
-            {hasWordPressConfig && (
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <button
-                  disabled={selectedArticles.size === 0}
-                  onClick={() => {
-                    if (selectedArticles.size === 0) return;
-                    const menu = document.getElementById('wp-menu');
-                    if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    border: selectedArticles.size > 0 ? '1px solid rgba(33, 117, 155, 0.3)' : '1px solid var(--border-light)',
-                    backgroundColor: selectedArticles.size > 0 ? 'rgba(33, 117, 155, 0.1)' : 'var(--bg-tertiary)',
-                    color: selectedArticles.size > 0 ? '#21759B' : 'var(--text-tertiary)',
-                    fontSize: '12px',
-                    cursor: selectedArticles.size > 0 ? 'pointer' : 'not-allowed',
-                    fontWeight: '500',
-                    opacity: selectedArticles.size > 0 ? 1 : 0.5
-                  }}
-                >
-                  🌐 WP
-                </button>
-                  <div id="wp-menu" style={{ 
-                    display: 'none', 
-                    position: 'absolute', 
-                    top: '100%', 
-                    left: 0, 
-                    marginTop: '4px',
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '6px',
-                    boxShadow: '0 3px 12px rgba(0,0,0,0.12)',
-                    zIndex: 100,
-                    overflow: 'hidden',
-                    minWidth: '90px'
-                  }}>
-                    <button 
-                      onClick={() => { document.getElementById('wp-menu')!.style.display = 'none'; handlePlatformSync('wordpress', 'draft'); }}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      存草稿
-                    </button>
-                    <button 
-                      onClick={() => { document.getElementById('wp-menu')!.style.display = 'none'; handlePlatformSync('wordpress', 'publish'); }}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      发布
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            {/* B站按钮 - 始终显示，根据配置状态决定是否可用 */}
-            <div style={{ position: 'relative', display: 'inline-block' }}>
-              <button
-                disabled={!hasBilibiliConfig || selectedArticles.size === 0}
-                onClick={() => {
-                  if (!hasBilibiliConfig || selectedArticles.size === 0) return;
-                  const menu = document.getElementById('bili-menu');
-                  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: (hasBilibiliConfig && selectedArticles.size > 0) ? '1px solid rgba(251, 114, 153, 0.3)' : '1px solid var(--border-light)',
-                  backgroundColor: (hasBilibiliConfig && selectedArticles.size > 0) ? 'rgba(251, 114, 153, 0.1)' : 'var(--bg-tertiary)',
-                  color: (hasBilibiliConfig && selectedArticles.size > 0) ? '#FB7299' : 'var(--text-tertiary)',
-                  fontSize: '12px',
-                  cursor: (hasBilibiliConfig && selectedArticles.size > 0) ? 'pointer' : 'not-allowed',
-                  fontWeight: '500',
-                  opacity: (hasBilibiliConfig && selectedArticles.size > 0) ? 1 : 0.5
-                }}
-                title={!hasBilibiliConfig ? '请先在设置中启用B站功能' : ''}
-              >
-                📹 B站
-              </button>
-              <div id="bili-menu" style={{ 
-                display: 'none', 
-                position: 'absolute', 
-                top: '100%', 
-                left: 0, 
-                marginTop: '4px',
-                backgroundColor: 'var(--bg-primary)',
-                border: '1px solid var(--border-light)',
-                borderRadius: '6px',
-                boxShadow: '0 3px 12px rgba(0,0,0,0.12)',
-                zIndex: 100,
-                overflow: 'hidden',
-                minWidth: '90px'
-              }}>
-                <button 
-                  onClick={() => { document.getElementById('bili-menu')!.style.display = 'none'; handlePlatformSync('bilibili', 'draft'); }}
-                  style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  存草稿
-                </button>
-                <button 
-                  onClick={() => { document.getElementById('bili-menu')!.style.display = 'none'; handlePlatformSync('bilibili', 'publish'); }}
-                  style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  投稿
-                </button>
-              </div>
+            <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+              {renderReadinessChip(platformReadiness.wechat)}
+              {config.bilibili?.enabled && renderReadinessChip(platformReadiness.bilibili)}
+              {config.wordpress?.enabled && renderReadinessChip(platformReadiness.wordpress)}
             </div>
-
-            {/* 全部按钮 */}
-            {hasWordPressConfig && (
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <button
-                  disabled={selectedArticles.size === 0}
-                  onClick={() => {
-                    if (selectedArticles.size === 0) return;
-                    const menu = document.getElementById('all-menu');
-                    if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-                  }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    border: selectedArticles.size > 0 ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border-light)',
-                    backgroundColor: selectedArticles.size > 0 ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)',
-                    color: selectedArticles.size > 0 ? '#10B981' : 'var(--text-tertiary)',
-                    fontSize: '12px',
-                    cursor: selectedArticles.size > 0 ? 'pointer' : 'not-allowed',
-                    fontWeight: '500',
-                    opacity: selectedArticles.size > 0 ? 1 : 0.5
-                  }}
-                >
-                  ✨ 全部
-                </button>
-                  <div id="all-menu" style={{ 
-                    display: 'none', 
-                    position: 'absolute', 
-                    top: '100%', 
-                    left: 0, 
-                    marginTop: '4px',
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '6px',
-                    boxShadow: '0 3px 12px rgba(0,0,0,0.12)',
-                    zIndex: 100,
-                    overflow: 'hidden',
-                    minWidth: '90px'
-                  }}>
-                    <button 
-                      onClick={() => { document.getElementById('all-menu')!.style.display = 'none'; handlePlatformSync('both', 'draft'); }}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      全部草稿
-                    </button>
-                    <button 
-                      onClick={() => { document.getElementById('all-menu')!.style.display = 'none'; handlePlatformSync('both', 'publish'); }}
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-secondary)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      全部发布
-                    </button>
-                  </div>
-                </div>
-              )}
-
+            <div style={{ width: '1px', height: '22px', backgroundColor: 'var(--border-light)' }} />
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {visibleSyncTargets.map(renderSyncAction)}
+            </div>
           </div>
 
           <button
             onClick={() => loadData(true)}
             disabled={loading || refreshing}
             style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
+              width: '36px',
+              height: '36px',
+              padding: 0,
+              borderRadius: '8px',
               border: '1px solid var(--border-medium)',
               backgroundColor: 'transparent',
               color: 'var(--text-secondary)',
-              fontSize: '12px',
+              fontSize: '15px',
               cursor: (loading || refreshing) ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              justifyContent: 'center'
             }}
+            title={refreshing ? '\u5237\u65b0\u4e2d' : loading ? '\u52a0\u8f7d\u4e2d' : '\u5237\u65b0\u6587\u7ae0'}
+            aria-label={refreshing ? '\u5237\u65b0\u4e2d' : loading ? '\u52a0\u8f7d\u4e2d' : '\u5237\u65b0\u6587\u7ae0'}
           >
-            {(loading || refreshing) ? '🔄' : '🔄'} {refreshing ? '刷新中' : loading ? '加载中' : '刷新'}
+            {String.fromCharCode(8635)}
           </button>
           
           <button
             onClick={() => setShowSettings(true)}
             style={{
-              width: '32px',
-              height: '32px',
+              width: '36px',
+              height: '36px',
               borderRadius: '8px',
               border: '1px solid var(--border-medium)',
               backgroundColor: 'transparent',
@@ -682,12 +1003,14 @@ const MainLayout: React.FC = () => {
               alignItems: 'center',
               justifyContent: 'center'
             }}
-            title="设置"
+            title={'\u8bbe\u7f6e'}
+            aria-label={'\u6253\u5f00\u8bbe\u7f6e'}
           >
-            ⚙️
+            {String.fromCharCode(9881)}
           </button>
           
           <ThemeToggle />
+          {renderWindowControls()}
         </div>
       </header>
 
@@ -705,8 +1028,11 @@ const MainLayout: React.FC = () => {
           hasBilibiliConfig={hasBilibiliConfig}
           selectedArticles={selectedArticles}
           onToggleArticle={handleToggleArticle}
+          onShowSyncFailure={() => setShowSyncFailures(true)}
         />
       </main>
+
+      {showSyncFailures && visibleFailures.length > 0 && renderFailurePanel(visibleFailures)}
 
       {/* 底部状态栏 */}
       <footer style={{
@@ -723,6 +1049,26 @@ const MainLayout: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span>状态:</span>
           <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{statusMessage}</span>
+          {visibleFailures.length > 0 && (
+            <button
+              onClick={() => setShowSyncFailures(prev => !prev)}
+              style={{
+                height: '28px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                color: 'var(--error)',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 700
+              }}
+              aria-label={`查看 ${visibleFailures.length} 个同步失败原因`}
+              title="查看同步失败原因"
+            >
+              查看原因 {visibleFailures.length}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {selectedArticles.size > 0 && (

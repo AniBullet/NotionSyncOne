@@ -1,4 +1,5 @@
 export interface WordPressConfig {
+  enabled?: boolean;      // 是否启用 WordPress 同步
   siteUrl: string;        // WordPress 站点 URL (例如: https://example.com)
   username: string;       // 用户名
   appPassword: string;    // 应用密码 (WordPress 5.6+)
@@ -16,7 +17,7 @@ export interface WordPressArticle {
   categories?: number[];      // 分类 ID 数组
   tags?: number[];            // 标签 ID 数组
   featured_media?: number;    // 特色图片 media ID
-  meta?: Record<string, any>; // 自定义字段/SEO 元数据
+  meta?: Record<string, unknown>; // 自定义字段/SEO 元数据
   slug?: string;              // URL 别名
   author?: number;            // 作者 ID
 }
@@ -55,7 +56,7 @@ export interface WordPressPost {
   tags: number[];
 }
 
-export interface WordPressResponse<T = any> {
+export interface WordPressResponse<T = unknown> {
   data?: T;
   code?: string;
   message?: string;

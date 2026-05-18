@@ -5,28 +5,28 @@
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 export const logger = {
-  log: (...args: any[]) => {
+  log: (...args: unknown[]) => {
     if (isDevelopment) {
       console.log(...args);
     }
   },
   
-  warn: (...args: any[]) => {
+  warn: (...args: unknown[]) => {
     console.warn(...args);
   },
   
-  error: (...args: any[]) => {
+  error: (...args: unknown[]) => {
     console.error(...args);
   },
   
-  info: (...args: any[]) => {
+  info: (...args: unknown[]) => {
     if (isDevelopment) {
       console.info(...args);
     }
   },
   
   // 总是输出的重要日志
-  always: (...args: any[]) => {
+  always: (...args: unknown[]) => {
     console.log(...args);
   }
 };

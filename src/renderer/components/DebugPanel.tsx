@@ -32,7 +32,7 @@ const DebugPanel: React.FC = () => {
           source: filter === 'sync' ? undefined : undefined, // 暂时不过滤，让用户选择
           keyword: filter === 'sync' ? '同步' : undefined
         });
-        setLogs(allLogs || []);
+        setLogs((allLogs as LogEntry[] | undefined) || []);
       } catch (error) {
         console.error('加载日志失败:', error);
       }
@@ -59,10 +59,11 @@ const DebugPanel: React.FC = () => {
       });
     };
 
-    window.electron.ipcRenderer.on('log-update', (_, log) => handleLogUpdate(log));
+    const handleLogUpdateMessage = (log: unknown) => handleLogUpdate(log as LogEntry);
+    window.electron.ipcRenderer.on('log-update', handleLogUpdateMessage);
 
     return () => {
-      window.electron.ipcRenderer.removeListener('log-update', handleLogUpdate);
+      window.electron.ipcRenderer.removeListener('log-update', handleLogUpdateMessage);
     };
   }, [filter]);
 
@@ -97,14 +98,6 @@ const DebugPanel: React.FC = () => {
         log.message.includes('WeChat')
       )
     : logs;
-
-  const clearLogs = () => {
-    setLogs([]);
-  };
-
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString();
-  };
 
   if (!isOpen) {
     return (

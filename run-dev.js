@@ -13,6 +13,26 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
+function sanitizeProxyEnv(env) {
+  const proxyKeys = [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy'
+  ];
+
+  proxyKeys.forEach((key) => {
+    const value = env[key];
+    if (!value) return;
+    const lower = String(value).trim().toLowerCase();
+    if (!(lower.startsWith('http://') || lower.startsWith('https://'))) {
+      delete env[key];
+    }
+  });
+}
+
 // 设置Windows终端为UTF-8编码（修复中文乱码）
 if (os.platform() === 'win32') {
   try {
@@ -33,6 +53,7 @@ console.log('');
 
 // 设置环境变量
 process.env.NODE_ENV = 'development';
+sanitizeProxyEnv(process.env);
 
 // 检查依赖是否已安装
 if (!fs.existsSync('node_modules')) {
@@ -88,20 +109,19 @@ function startDevServer() {
   console.log('======================================');
   console.log('');
 
-  // 注意：Windows 必须使用 shell 来执行 .cmd 文件
-  // 这会产生 DEP0190 警告，但是安全的，因为：
-  // 1. 参数使用数组传递，不是字符串拼接
-  // 2. 命令和参数都是固定的，没有用户输入
-  const dev = spawn('pnpm', ['dev'], {
+  // Windows 下直接 spawn .cmd 在新版本 Node 中可能触发 EINVAL，
+  // 这里统一通过 shell 执行命令字符串，避免 .cmd 可执行解析差异。
+  const devCommand = isWindows ? 'pnpm dev' : 'pnpm dev';
+  const dev = spawn(devCommand, [], {
     stdio: 'inherit',
     env: process.env,
-    shell: isWindows
+    shell: true
   });
 
   dev.on('error', (error) => {
     console.error('启动失败:', error.message);
-    if (error.message.includes('ENOENT')) {
-      console.error('\n[错误] 未找到 pnpm，请确保已安装:');
+    if (error.message.includes('ENOENT') || error.message.includes('EINVAL')) {
+      console.error('\n[错误] 启动 pnpm 失败，请确认 pnpm 可用后重试:');
       console.error('  npm install -g pnpm');
     }
     process.exit(1);

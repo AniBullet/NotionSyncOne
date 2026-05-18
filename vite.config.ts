@@ -89,7 +89,7 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     port: 5173,
-      strictPort: false,
+      strictPort: true,
       host: '127.0.0.1',
       hmr: {
         overlay: true,

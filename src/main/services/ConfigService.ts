@@ -20,10 +20,13 @@ const ENCRYPTED_FIELDS = [
   'wordpress.appPassword',
 ];
 
+type ConfigRecord = Record<string, unknown>;
+
 export class ConfigService {
   private configPath: string;
   private config: Config;
   private encryptionAvailable: boolean;
+  private initPromise: Promise<void>;
 
   constructor() {
     const userDataPath = app.getPath('userData');
@@ -45,7 +48,7 @@ export class ConfigService {
     }
 
     // 初始化配置
-    this.init().catch(error => {
+    this.initPromise = this.init().catch(error => {
       logger.error('初始化配置失败:', error);
     });
   }
@@ -57,6 +60,7 @@ export class ConfigService {
     return {
       notion: { apiKey: '', databaseId: '' },
       wechat: { appId: '', appSecret: '' },
+      wordpress: { enabled: false, siteUrl: '', username: '', appPassword: '' },
       bilibili: { enabled: false }
     };
   }
@@ -64,21 +68,26 @@ export class ConfigService {
   /**
    * 根据路径获取对象的值
    */
-  private getValueByPath(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+  private getValueByPath(obj: ConfigRecord, path: string): unknown {
+    return path.split('.').reduce<unknown>((current, key) => {
+      if (!current || typeof current !== 'object') {
+        return undefined;
+      }
+      return (current as ConfigRecord)[key];
+    }, obj);
   }
 
   /**
    * 根据路径设置对象的值
    */
-  private setValueByPath(obj: any, path: string, value: any): void {
+  private setValueByPath(obj: ConfigRecord, path: string, value: unknown): void {
     const keys = path.split('.');
     const lastKey = keys.pop()!;
     const target = keys.reduce((current, key) => {
-      if (current[key] === undefined) {
+      if (!current[key] || typeof current[key] !== 'object') {
         current[key] = {};
       }
-      return current[key];
+      return current[key] as ConfigRecord;
     }, obj);
     target[lastKey] = value;
   }
@@ -140,7 +149,7 @@ export class ConfigService {
   /**
    * 深度合并对象（source 覆盖 target 中存在的字段）
    */
-  private deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+  private deepMerge<T extends object>(target: T, source: Partial<T>): T {
     const result = this.deepClone(target);
     
     for (const key in source) {
@@ -153,10 +162,10 @@ export class ConfigService {
           result[key] !== null
         ) {
           // 递归合并对象
-          result[key] = this.deepMerge(result[key], source[key] as any);
+          result[key] = this.deepMerge(result[key] as object, source[key] as object) as T[Extract<keyof T, string>];
         } else {
           // 直接覆盖
-          result[key] = this.deepClone(source[key]) as any;
+          result[key] = this.deepClone(source[key]) as T[Extract<keyof T, string>];
         }
       }
     }
@@ -167,13 +176,14 @@ export class ConfigService {
   /**
    * 加密配置中的敏感字段
    */
-  private encryptConfig(config: any): any {
+  private encryptConfig<T extends object>(config: T): T {
     const encrypted = this.deepClone(config);
+    const encryptedRecord = encrypted as ConfigRecord;
     
     for (const fieldPath of ENCRYPTED_FIELDS) {
-      const value = this.getValueByPath(encrypted, fieldPath);
+      const value = this.getValueByPath(encryptedRecord, fieldPath);
       if (value && typeof value === 'string') {
-        this.setValueByPath(encrypted, fieldPath, this.encryptString(value));
+        this.setValueByPath(encryptedRecord, fieldPath, this.encryptString(value));
       }
     }
     
@@ -183,17 +193,30 @@ export class ConfigService {
   /**
    * 解密配置中的敏感字段
    */
-  private decryptConfig(config: any): any {
+  private decryptConfig<T extends object>(config: T): T {
     const decrypted = this.deepClone(config);
+    const decryptedRecord = decrypted as ConfigRecord;
     
     for (const fieldPath of ENCRYPTED_FIELDS) {
-      const value = this.getValueByPath(decrypted, fieldPath);
+      const value = this.getValueByPath(decryptedRecord, fieldPath);
       if (value && typeof value === 'string') {
-        this.setValueByPath(decrypted, fieldPath, this.decryptString(value));
+        this.setValueByPath(decryptedRecord, fieldPath, this.decryptString(value));
       }
     }
     
     return decrypted;
+  }
+
+  private async writeConfigFile(config: Config): Promise<void> {
+    const configDir = dirname(this.configPath);
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
+    }
+
+    const encryptedConfig = this.encryptConfig(config);
+    const tempPath = `${this.configPath}.tmp`;
+    await fs.writeFile(tempPath, JSON.stringify(encryptedConfig, null, 2));
+    await fs.rename(tempPath, this.configPath);
   }
 
   async init(): Promise<void> {
@@ -205,11 +228,7 @@ export class ConfigService {
       }
     } catch (error) {
       logger.error('加载配置失败，使用默认配置:', error);
-      const configDir = dirname(this.configPath);
-      if (!existsSync(configDir)) {
-        mkdirSync(configDir, { recursive: true });
-      }
-      await this.saveConfig(this.config);
+      await this.writeConfigFile(this.config);
     }
   }
 
@@ -233,7 +252,7 @@ export class ConfigService {
       
       if (needsMigration) {
         logger.log('⚠ 检测到明文配置，正在升级到加密存储...', 'ConfigService');
-        await this.saveConfig(this.config);
+        await this.writeConfigFile(this.config);
         logger.log('✓ 配置升级完成，敏感信息已加密保护', 'ConfigService');
       }
     } catch (error) {
@@ -245,7 +264,7 @@ export class ConfigService {
     try {
       if (!existsSync(this.configPath)) {
         logger.log('配置文件不存在，创建默认配置');
-        await this.saveConfig(this.config);
+        await this.writeConfigFile(this.config);
         return this.config;
       }
       
@@ -270,10 +289,14 @@ export class ConfigService {
     return this.config;
   }
 
-  async saveConfig(newConfig: Config): Promise<void> {
+  async saveConfig(newConfig: Partial<Config>): Promise<void> {
     try {
+      await this.initPromise;
+
+      const nextConfig = this.deepMerge(this.config, newConfig);
+
       // 验证必填字段
-      this.validateConfig(newConfig);
+      this.validateConfig(nextConfig);
       
       // 保留已有的 token 信息（不被覆盖）
       const preservedToken = {
@@ -282,7 +305,7 @@ export class ConfigService {
       };
       
       // 深度合并配置
-      this.config = this.deepMerge(this.config, newConfig);
+      this.config = nextConfig;
       
       // 恢复 token 信息
       if (preservedToken.accessToken) {
@@ -293,9 +316,7 @@ export class ConfigService {
       }
       
       // 加密敏感字段并保存
-      const encryptedConfig = this.encryptConfig(this.config);
-      
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       logger.log('✓ 配置已安全保存（敏感字段已加密）', 'ConfigService');
     } catch (error) {
@@ -317,8 +338,7 @@ export class ConfigService {
         mkdirSync(configDir, { recursive: true });
       }
       
-      const encryptedConfig = this.encryptConfig(this.config);
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       await this.loadConfig();
     } catch (error) {
@@ -343,8 +363,7 @@ export class ConfigService {
     try {
       this.config.bilibili = { ...this.config.bilibili, ...config };
       
-      const encryptedConfig = this.encryptConfig(this.config);
-      await fs.writeFile(this.configPath, JSON.stringify(encryptedConfig, null, 2));
+      await this.writeConfigFile(this.config);
       
       await this.loadConfig();
     } catch (error) {
@@ -388,14 +407,6 @@ export class ConfigService {
       } catch (error) {
         errors.push(error instanceof Error ? error.message : '数据库 ID 格式不正确');
       }
-    }
-
-    // 验证微信配置
-    if (!config.wechat.appId) {
-      errors.push('微信 AppID 不能为空');
-    }
-    if (!config.wechat.appSecret) {
-      errors.push('微信 AppSecret 不能为空');
     }
 
     if (errors.length > 0) {
